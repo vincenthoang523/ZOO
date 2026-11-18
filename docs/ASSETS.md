@@ -14,6 +14,7 @@ Everything is uploaded to group `229775176`. Uploads are permanent, so a changed
 | 118420671503999 | ZooKit_Trader_v1 | `blender/export/ZooKit_Trader_v1.glb` |
 | 108658743696915 | ZooKit_Props_v2 | `blender/export/ZooKit_Props_v2.glb` |
 | 87748702725793 | ZooKit_Board_v2 (single-pole Top Earners board) | `blender/export/ZooKit_Board_v2.glb` |
+| 74251838140516 | ZooKit_EnclosurePalm_v3 (mesh enclosure with rock wall and waterfall, curved palm) | `blender/export/ZooKit_EnclosurePalm_v3.glb` |
 
 In Studio, the imported pieces become templates in `ServerStorage.ZooKit`, and copies of them are placed in `workspace.Zoo.Art`.
 
@@ -22,6 +23,15 @@ In Studio, the imported pieces become templates in `ServerStorage.ZooKit`, and c
 - **Scale:** 1 Blender unit = 1 stud.
 - **Axes:** the importer maps Blender (x, y, z) to mesh-local (-x, z, y). Work out the import's transform from one mesh centre you know, then give each piece's pivot an extra half turn (`CFrame.Angles(0, math.pi, 0)`).
 - **Colours:** colours are lost on import. Each mesh is named `<Piece>__<colour>`, and the import script sets `MeshPart.Color` from that suffix.
+
+## Waterfall texture (Image assets)
+
+| Asset id | Image | Source file |
+|---|---|---|
+| 71013397557210 | WaterfallStreaks_v2: vertical streaks, used by the enclosure waterfall Beams | `blender/export/WaterfallStreaks.png` |
+| 82233352105274 | WaterfallStreaks (first try, streaks ran sideways on the Beam; unused) | none |
+
+A Beam lays an image's height along its length, so streaks have to be drawn vertically.
 
 ## Icons (Image assets)
 

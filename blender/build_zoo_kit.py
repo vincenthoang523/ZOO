@@ -17,7 +17,8 @@ PAL = dict(grass="7CC86E", grassDark="5FB35A", leaf="46A050", leafLight="6FCB5F"
            dark="3C2D23", iron="4A4E57", accent="FF9A3C", glow="FFE08A", earth="D9C48A", rock="BDB7A8", bush="3F9A4A", water="6FC8F0", paw="FFF6E1", cap="8C5A32", leafDark="2F8A45", woodDark="6E4526", pink="FF7FB0",
            plank="D6A161", plankAlt="C38E55", ink="26262B", zebra="F7F3EA", rope="C9A46A", hay="F2C94C",
            khaki="DEC696", khakiDark="B89B62", olive="6E7A3E", oliveDark="4F5A2B", brass="E0B040", glass="9ED8F0",
-           screen="1E2840", blue="4AA3F0", dirt="D9A066", gold="F2B233", bulb="FFF1C2")
+           screen="1E2840", blue="4AA3F0", dirt="D9A066", gold="F2B233", bulb="FFF1C2",
+           cliff="E6E1D3", cliffDark="C9C2B2", moss="7CC86E", waterDeep="4FB2E3", foam="EAF8FF", ripple="EAF8FF")
 I = Matrix.Identity(4)
 
 
@@ -218,74 +219,202 @@ class Piece:
 
 
 # ----------------------------------------------------------------- pieces
+WF_X, WF_LIP = -7.4, 7.2            # waterfall centre x and the height of its lip (Studio reads these for the VFX)
+POND_Y = -9.9                        # pond centre y (front/back), pond surface top at z 0.72
+
+
+def _remeshed(bm, voxel, ratio):
+    """Fuse overlapping shells into ONE closed surface (voxel remesh), then collapse it down to big low-poly facets."""
+    me = bpy.data.meshes.new("tmp_fuse"); bm.to_mesh(me); bm.free()
+    ob = bpy.data.objects.new("tmp_fuse", me)
+    bpy.context.scene.collection.objects.link(ob)
+    r = ob.modifiers.new("Remesh", "REMESH"); r.mode, r.voxel_size, r.adaptivity = 'VOXEL', voxel, 0.0
+    d = ob.modifiers.new("Decimate", "DECIMATE"); d.ratio = ratio
+    f = ob.modifiers.new("Facets", "DECIMATE"); f.decimate_type, f.angle_limit = 'DISSOLVE', math.radians(9)   # slivers -> broad facets
+    bpy.context.view_layer.update()
+    ev = ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    out = bmesh.new(); out.from_mesh(ev.to_mesh()); ev.to_mesh_clear()
+    bpy.data.objects.remove(ob, do_unlink=True); bpy.data.meshes.remove(me)
+    return out
+
+
+def _paint(p, bm, pick):
+    """Split one surface into colour meshes face by face (pick(face) -> colour); vertices stay where they are."""
+    bm.normal_update()
+    bm.faces.index_update()
+    want = [pick(f) for f in bm.faces]
+    for color in set(want):
+        part = bm.copy()
+        part.faces.ensure_lookup_table()
+        bmesh.ops.delete(part, geom=[f for f in part.faces if want[f.index] != color], context='FACES')
+        bmesh.ops.delete(part, geom=[v for v in part.verts if not v.link_faces], context='VERTS')
+        me = bpy.data.meshes.new("tmp"); part.to_mesh(me); part.free()
+        p.parts.setdefault(color, bmesh.new()).from_mesh(me)
+        bpy.data.meshes.remove(me)
+    bm.free()
+
+
+def _rock_wall(p):
+    """Back cliff: a solid backbone wall with low-poly boulders pushed half into its face and crest, fused into one
+    rock surface. A flat-bottomed notch at WF_X is the waterfall's channel. Grass tops, two stone tones on the sides."""
+    def crest(x):
+        base = 8.4 + 1.1 * math.sin(x * 0.45 + 0.8) + 2.0 * (abs(x) / 16) ** 2
+        w = min(1.0, max(0.0, (2.4 - abs(x - WF_X)) / 0.8))      # 1 inside the channel, easing out over 0.8 studs
+        return base - (base - WF_LIP) * w
+    bm = bmesh.new()
+    xs = [-16.2 + 32.4 * i / 40 for i in range(41)]
+    prof = [(-16.2, 0.3)] + [(x, crest(x)) for x in xs] + [(16.2, 0.3)]
+    a = [bm.verts.new((x, -14.3, z)) for x, z in prof]
+    b = [bm.verts.new((x, -11.4, z)) for x, z in prof]
+    bm.faces.new(a); bm.faces.new(b)
+    for i in range(len(prof)):
+        j = (i + 1) % len(prof)
+        bm.faces.new((a[i], a[j], b[j], b[i]))
+    rnd = random.Random(7)
+
+    def boulder(c, r, sq=(1.25, 0.85, 1.0)):
+        t = bmesh.new()
+        bmesh.ops.create_icosphere(t, subdivisions=1, radius=r)
+        for v in t.verts: v.co *= 1 + rnd.uniform(-0.18, 0.18)
+        t.transform(T(*c) @ Rz(rnd.uniform(-25, 25)) @ S(*sq))
+        me = bpy.data.meshes.new("tmp"); t.to_mesh(me); t.free(); bm.from_mesh(me); bpy.data.meshes.remove(me)
+    gap = lambda x, w: abs(x - WF_X) < w
+    x = -15.2
+    while x < 15.6:                                              # crest boulders, half sunk into the top
+        if not gap(x, 2.3): boulder((x, rnd.uniform(-13.3, -12.3), crest(x) - 0.4), rnd.uniform(1.7, 2.3))
+        x += rnd.uniform(2.3, 3.0)
+    for s in (-1, 1): boulder((WF_X + s * 2.9, -12.0, crest(WF_X + s * 2.9) + 0.3), 1.9, (1.0, 0.9, 1.2))   # gorge walls
+    x = -14.8
+    while x < 15.4:                                              # face boulders, centres on the wall face
+        for z in (2.6, 5.4):
+            if not gap(x, 2.6) and z < crest(x) - 1.2:
+                boulder((x + rnd.uniform(-0.6, 0.6), -11.5, z + rnd.uniform(-0.5, 0.5)), rnd.uniform(1.5, 2.0))
+        x += rnd.uniform(2.6, 3.4)
+    for x in (-15.0, -1.4, 1.8, 5.2, 8.8, 12.4, 15.0):            # foot boulders, kept out of the pond
+        boulder((x, -10.9, 0.5), rnd.uniform(1.1, 1.5), (1.3, 1.0, 0.8))
+    surf = _remeshed(bm, 0.5, 0.05)
+
+    def pick(f):
+        n, cz = f.normal, f.calc_center_median().z
+        if n.z > 0.8 and cz > 2.0: return "moss"
+        return "cliffDark" if n.z < -0.05 or f.index % 4 == 0 else "cliff"
+    _paint(p, surf, pick)
+
+
+def _waterfall(p):
+    """Water sheet that starts inside the channel, rolls over the lip and drops into the pond; foam on the lip and at
+    the base, a ripple ring Studio animates, and a stone-rimmed pond that runs back into the cliff foot."""
+    path = [(-13.2, WF_LIP + 0.15), (-11.7, WF_LIP + 0.2), (-11.0, WF_LIP + 0.05), (-10.6, WF_LIP - 0.6),
+            (-10.45, WF_LIP - 1.6), (-10.4, 3.0), (-10.4, 0.5)]
+    verts, faces, th = [], [], 0.14
+    for i, (y, z) in enumerate(path):
+        a, b = path[max(i - 1, 0)], path[min(i + 1, len(path) - 1)]
+        t = Vector((b[0] - a[0], b[1] - a[1])).normalized()
+        n = Vector((-t.y, t.x)) if -t.y >= 0 else Vector((t.y, -t.x))      # sheet normal in (y, z), pointing to the front
+        w = 1.4 + 0.3 * (1 - z / WF_LIP)                                       # widens a little as it falls
+        for sx in (-1, 1):
+            for sn in (1, -1):
+                verts.append((WF_X + sx * w, y + n.x * th * sn, z + n.y * th * sn))
+    for i in range(len(path) - 1):
+        q, r = 4 * i, 4 * i + 4
+        for k0, k1 in ((0, 2), (2, 3), (3, 1), (1, 0)):
+            faces.append((q + k0, q + k1, r + k1, r + k0))
+    last = 4 * (len(path) - 1)
+    faces += [(0, 1, 3, 2), (last, last + 2, last + 3, last + 1)]
+    p.mesh("water", verts, faces)
+    p.tube("foam", [(WF_X - 1.7, -11.05, WF_LIP + 0.1), (WF_X, -10.95, WF_LIP + 0.28), (WF_X + 1.7, -11.05, WF_LIP + 0.1)], [0.32, 0.42, 0.32], 6)
+    p.lathe("foam", [(1.3, 0.6), (2.0, 0.66), (1.9, 0.98), (1.2, 0.86)], 10, T(WF_X, -10.2, 0) @ S(1.25, 0.75, 1), closed=True)
+    p.lathe("ripple", [(2.3, 0.66), (2.55, 0.66), (2.55, 0.76), (2.3, 0.76)], 14, T(WF_X, -10.0, 0) @ S(1.25, 0.75, 1), closed=True)
+    inner = rrect(9.6, 4.6, 1.6)
+    p.frame("stone", rrect(10.8, 5.4, 2.0), inner, 0.48, T(WF_X, POND_Y - 0.4, 0.42))
+    p.extrude("waterDeep", inner, 0.3, T(WF_X, POND_Y - 0.4, 0.42), 'XY')
+
+
 def enclosure():
-    """A zoo stall: raised curb and fence around the lawn, a painted-backdrop back wall between two
-    chunky pillars with wing walls, and a header with a scalloped awning tinted to the plot colour."""
-    p = Piece("Enclosure", bevel=0.3, flat=("rock", "bush", "paw", "cap"),
-              bevels={"stone": 0.35, "wood": 0.35, "sky": 0.1, "glow": 0.1, "accent": 0.2, "yellow": 0.15, "water": 0.05,
-                      "sand": 0.0, "grass": 0.1, "leaf": 0.25, "leafLight": 0.25, "paw": 0.0, "cap": 0.0})
-    # "paw" and "cap" are cream/wood details kept unbevelled: bevelling many tiny shapes was a third of the triangles
-    disc = lambda col, x, y, z, r, h=0.06, sx=1.0, seg=12: p.lathe(col, [(r, 0), (r, h)], seg, T(x, y, z) @ S(sx, 1, 1))
+    """Animal pen laid out in the plot's Pen space (Blender x = Pen x, Blender -y = Pen z, z up; front is +y).
+    Stone curb with a cream cap, a rounded fence with lantern corner pillars, the rock cliff and waterfall at the back,
+    and a gateway of round pillars, curved knee braces, a beam, a scalloped awning and a paw sign. "accent" is re-tinted
+    per plot in Studio. Every piece overlaps the next one; floating_report() must come back empty."""
+    p = Piece("Enclosure", bevel=0.12, flat=("cliff", "cliffDark", "moss"),
+              bevels={"stone": 0.2, "cream": 0.12, "wood": 0.15, "woodDark": 0.12, "accent": 0.06, "yellow": 0.0, "glow": 0.0,
+                      "water": 0.04, "waterDeep": 0.0, "foam": 0.0, "ripple": 0.0, "grass": 0.0, "sand": 0.0, "leafLight": 0.0,
+                      "plank": 0.06, "hay": 0.0, "paw": 0.0})
+    disc = lambda col, x, y, z, r, h=0.06, sx=1.0, seg=14: p.lathe(col, [(r, 0), (r, h)], seg, T(x, y, z) @ S(sx, 1, 1))
+    off = lambda pts, dy: [(x, y + dy) for x, y in pts]
 
-    # plinth, raised curb around the pen, lawn with a sand patch, a pond and rocks
-    p.extrude("stone", rrect(43, 28.5, 3), 0.4, T(0, -5.6, 0), 'XY')
-    p.frame("cream", rrect(32, 22, 1.8), rrect(29.2, 19.2, 1.0), 0.8, T(0, -4, 0.3))
-    p.extrude("grass", rrect(29.6, 19.6, 1.0), 0.16, T(0, -4, 0.3), 'XY')
-    disc("sand", -6.5, -1.5, 0.46, 4.0, sx=1.5)
-    disc("leafLight", 5.5, 1.5, 0.46, 3.2, sx=1.6)
-    p.lathe("stone", [(2.5, 0), (3.5, 0), (3.5, 0.5), (2.5, 0.5)], 12, T(10.3, -10.2, 0.4), closed=True)
-    disc("water", 10.3, -10.2, 0.4, 2.7, h=0.32)
-    p.ico("rock", 1.4, 1, T(-11.6, -11.4, 1.0) @ S(1.25, 1, 0.75), 0.15, 21)
-    p.ico("rock", 0.85, 1, T(-9.6, -12.4, 0.75) @ S(1.1, 1, 0.8), 0.15, 22)
-    p.ico("bush", 1.25, 1, T(13.2, -12.6, 1.3), 0.1, 23)
+    # plinth, curb (pen at y -10.5..10.5 inside, back curb under the cliff), cream cap, lawn
+    p.extrude("stone", rrect(36.8, 26.8, 1.6), 0.42, T(0, -1.5, 0), 'XY')
+    p.frame("stone", rrect(36.0, 26.0, 1.4), off(rrect(31.0, 21.0, 0.8), 1.5), 1.15, T(0, -1.5, 0.3))
+    p.frame("cream", rrect(36.4, 26.4, 1.5), off(rrect(30.6, 20.6, 0.7), 1.5), 0.35, T(0, -1.5, 1.4))
+    p.extrude("grass", rrect(31.2, 21.2, 0.9), 0.16, T(0, 0, 0.3), 'XY')
+    disc("sand", 4.6, 2.2, 0.44, 3.1, sx=1.3)
+    disc("sand", 8.6, 4.6, 0.44, 1.7, sx=1.2)
+    disc("leafLight", -4.6, 4.0, 0.44, 2.4, h=0.05, sx=1.3)
+    disc("leafLight", 1.0, -3.8, 0.44, 1.6, h=0.05, sx=1.2)
 
-    # fence standing on the curb
-    for x, y in [(x, 6.3) for x in (-15.3, -7.65, 0, 7.65, 15.3)] + [(sx * 15.3, y) for sx in (-1, 1) for y in (-0.2, -6.7, -13.2)]:
-        p.lathe("cream", [(0.62, 1.0), (0.62, 3.2)], 6, T(x, y, 0))
-        p.lathe("cap", [(0.86, 3.2), (0.86, 3.6), (0, 4.0)], 6, T(x, y, 0))
-    for z in (1.9, 2.8):
-        p.box("cream", (30.6, 0.45, 0.45), T(0, 6.3, z))
-        for sx in (-1, 1): p.box("cream", (0.45, 19.5, 0.45), T(sx * 15.3, -3.45, z))
+    # fence: round posts with an accent collar and a cream dome, two round rails running through every post
+    FY, SX, CAP = 10.95, 16.7, 1.75
 
-    # pillars with bands, glow strips, finials and wing walls
-    wing = [(0, 0.3), (6.6, 0.3), (6.6, 2.6)] + [(6.6 * (1 - i / 6), 2.6 + 7.2 * (i / 6) ** 1.7) for i in range(1, 7)]
-    for sx in (-1, 1):
-        p.lathe("cream", [(2.9, 0), (2.9, 1.4), (2.2, 2.0), (2.2, 14.6), (2.8, 15.3), (2.8, 16.6), (0, 16.6)], 10, T(sx * 18.2, -15.5, 0))
-        for z in (2.7, 13.3): p.lathe("cap", [(2.42, z), (2.42, z + 0.7)], 10, T(sx * 18.2, -15.5, 0))
-        p.box("glow", (0.55, 0.4, 9.4), T(sx * 18.2, -13.2, 8.2))
-        p.lathe("yellow", [(0, 20.8), (0.8, 21.1), (1.15, 21.9), (0.8, 22.7), (0, 23.0)], 10, T(sx * 20.5, -15.5, 0))
-        p.extrude("cream", wing, 0.8, T(sx * 16.95, -15.6, 0) @ Rz(90))
-        p.ico("bush", 1.7, 2, T(sx * 20.6, -12.6, 1.1) @ S(1, 1, 0.8), 0.08, 30 + sx)
-        p.ico("bush", 1.05, 1, T(sx * 21.6, -10.6, 0.7), 0.1, 40 + sx)
+    def post(x, y):
+        p.lathe("wood", [(0.42, CAP - 0.1), (0.42, 3.75), (0, 3.75)], 8, T(x, y, 0))
+        p.lathe("accent", [(0.52, 3.45), (0.52, 3.8), (0, 3.8)], 8, T(x, y, 0))
+        p.lathe("cream", [(0.5, 3.75), (0.5, 3.95), (0.34, 4.25), (0, 4.38)], 8, T(x, y, 0))
+    for x in (-12.5, -8.3, -4.15, 0, 4.15, 8.3, 12.5): post(x, FY)
+    for y in (6.5, 2.0, -2.5, -7.0):
+        for s in (-1, 1): post(s * SX, y)
+    for z in (2.5, 3.25):
+        p.limb("plank", (-SX, FY, z), (SX, FY, z), 0.2, 0.2, 8)
+        for s in (-1, 1): p.limb("plank", (s * SX, FY, z), (s * SX, -11.8, z), 0.2, 0.2, 8)
+    # front corner pillars with lanterns
+    for s in (-1, 1):
+        L = T(s * SX, FY, 0)
+        p.lathe("stone", [(1.0, CAP - 0.1), (1.0, 2.1), (0.8, 2.35), (0.8, 4.9), (0, 4.9)], 10, L)
+        p.lathe("accent", [(0.9, 3.4), (0.9, 3.9), (0, 3.9)], 10, L)
+        p.lathe("cream", [(1.05, 4.85), (1.05, 5.2), (0, 5.2)], 10, L)
+        p.lathe("woodDark", [(0.6, 5.15), (0.6, 5.4), (0, 5.4)], 8, L)
+        p.lathe("glow", [(0, 5.3), (0.42, 5.45), (0.5, 5.95), (0.4, 6.35), (0, 6.45)], 8, L)
+        p.lathe("woodDark", [(0.78, 6.25), (0.78, 6.42), (0, 7.0)], 8, L)
 
-    # header: beam, cornice, name plate with a paw, scalloped awning
-    p.box("wood", (45, 4.2, 3.6), T(0, -15.5, 18.4))
-    p.box("cream", (47, 5.2, 0.7), T(0, -15.5, 20.55))
-    p.box("accent", (26, 0.5, 2.4), T(0, -13.25, 18.4))
-    fdisc = lambda x, z, r: p.lathe("paw", [(r, 0), (r, 0.12)], 8, T(x, -13.05, z) @ Rx(-90))
-    fdisc(0, 17.95, 0.7)
-    for dx, dz in ((-0.85, 0.65), (-0.3, 1.05), (0.3, 1.05), (0.85, 0.65)): fdisc(dx, 17.95 + dz, 0.3)
-    r = 33.0 / 16
-    awning = [(-16.5, 16.7), (16.5, 16.7)]
-    for k in range(8):
-        cx = 16.5 - r * (2 * k + 1)
-        awning += [(cx + r * math.cos(math.pi * j / 5), 15.9 - 1.25 * math.sin(math.pi * j / 5)) for j in range(0 if k == 0 else 1, 6)]
-    p.extrude("accent", awning, 0.5, T(0, -13.7, 0))
+    _rock_wall(p)
+    _waterfall(p)
 
-    # painted backdrop: sky, sun, cloud, two layers of hills
-    p.box("sky", (33.4, 0.8, 16.3), T(0, -16.0, 8.45))
-    bdisc = lambda col, x, z, rr: p.lathe(col, [(rr, 0), (rr, 0.5)], 12, T(x, -15.6, z) @ Rx(-90))
-    bdisc("yellow", 8.5, 9.2, 2.7)
-    for x, z, rr in ((-9.2, 12.6, 1.7), (-7.0, 13.1, 2.1), (-4.8, 12.5, 1.5)): bdisc("paw", x, z, rr)
-    hills = lambda base, amp, ph, n=14: [(-16.5, 0.3)] + [(-16.5 + 33 * i / n, base + amp * math.sin(ph + i / n * math.pi * 3)) for i in range(n + 1)] + [(16.5, 0.3)]
-    p.extrude("leafLight", hills(7.0, 1.5, 0.6), 0.7, T(0, -15.2, 0))
-    p.extrude("leaf", hills(4.0, 1.1, 2.4), 0.7, T(0, -14.55, 0))
+    # feeding trough against the left fence
+    tx, ty = -13.4, -1.0
+    for dx in (-0.75, 0.75):
+        for dy in (-1.4, 1.4): p.box("woodDark", (0.34, 0.34, 0.75), T(tx + dx, ty + dy, 0.75))
+    p.box("wood", (2.0, 3.5, 0.85), T(tx, ty, 1.45))
+    p.box("plank", (2.25, 3.75, 0.2), T(tx, ty, 1.9))
+    p.box("hay", (1.6, 3.1, 0.3), T(tx, ty, 2.05))
 
-    # pad in front, with a paw print
-    p.extrude("cream", rrect(24, 11, 1.6), 0.25, T(0, 12.5, 0), 'XY')
-    p.extrude("accent", rrect(22, 9, 1.3), 0.24, T(0, 12.5, 0.1), 'XY')
-    disc("paw", 0, 13.1, 0.33, 1.5, h=0.07, sx=1.25, seg=10)
-    for x, y in ((-1.9, 11.2), (1.9, 11.2), (-0.7, 10.3), (0.7, 10.3)): disc("paw", x, y, 0.33, 0.62, h=0.07, seg=8)
+    # gateway over the back: round pillars, knee braces, beam, cornice, awning, sign, finials
+    PY = -12.5
+    for s in (-1, 1):
+        L = T(s * 17, PY, 0)
+        p.lathe("stone", [(1.7, CAP - 0.1), (1.7, 2.6), (1.3, 3.0), (0, 3.0)], 12, L)
+        p.lathe("cream", [(1.2, 2.9), (1.2, 16.2), (0, 16.2)], 12, L)
+        for z in (6.0, 11.0): p.lathe("accent", [(1.32, z), (1.32, z + 0.6), (0, z + 0.6)], 12, L)
+        p.lathe("woodDark", [(1.25, 15.5), (1.65, 16.0), (1.65, 16.65), (0, 16.65)], 12, L)
+        brace = [(15.95, 12.6), (15.95, 16.6), (12.5, 16.6)] + [(12.5 + 3.45 * math.cos(math.radians(a)), 12.6 + 4.0 * math.sin(math.radians(a))) for a in range(80, 0, -16)]
+        p.extrude("wood", [(s * x, z) for x, z in brace], 0.8, T(0, PY, 0))
+        p.lathe("yellow", [(0, 19.2), (0.8, 19.5), (1.1, 20.2), (0.8, 20.9), (0, 21.2)], 10, T(s * 17, PY, 0))
+    p.box("wood", (39.0, 3.0, 2.4), T(0, PY, 17.7))
+    p.box("cream", (40.0, 3.5, 0.5), T(0, PY, 19.08))
+    p.box("cream", (39.0, 0.5, 0.35), T(0, -11.05, 16.55))
+    for k in range(14):
+        cx = -13 + 2 * k
+        pts = [(cx - 1, 16.6), (cx - 1, 15.6)] + [(cx + math.cos(math.radians(a)), 15.6 + math.sin(math.radians(a))) for a in range(200, 360, 20)] + [(cx + 1, 15.6), (cx + 1, 16.6)]
+        p.extrude("accent" if k % 2 == 0 else "cream", pts, 0.45, T(0, -10.85, 0))
+    p.extrude("cream", [(x, z + 18.2) for x, z in rrect(14.6, 3.6, 0.8)], 0.4, T(0, -10.75, 0))
+    p.extrude("accent", [(x, z + 18.2) for x, z in rrect(13.6, 2.8, 0.6)], 0.3, T(0, -10.5, 0))
+    fdisc = lambda x, z, r: p.lathe("paw", [(r, 0), (r, 0.16)], 10, T(x, -10.42, z) @ Rx(-90))
+    fdisc(0, 17.75, 0.72)
+    for dx, dz in ((-0.95, 0.75), (-0.35, 1.2), (0.35, 1.2), (0.95, 0.75)): fdisc(dx, 17.75 + dz, 0.32)
+
+    # welcome pad in front, with a paw print
+    p.extrude("cream", rrect(23.6, 9.6, 1.6), 0.25, T(0, 16.4, 0), 'XY')
+    p.extrude("accent", rrect(22.0, 8.0, 1.3), 0.24, T(0, 16.4, 0.1), 'XY')
+    disc("paw", 0, 17.4, 0.33, 1.6, h=0.07, sx=1.25, seg=12)
+    for x, y in ((-2.0, 15.4), (2.0, 15.4), (-0.75, 14.5), (0.75, 14.5)): disc("paw", x, y, 0.33, 0.65, h=0.07, seg=10)
     return p
 
 
@@ -388,9 +517,10 @@ def _frond(p, color, top, yaw, R=6.5):
 
 
 def tree_palm():
-    """Palm: leaning trunk of stacked two-tone segments, seven arching fronds and a few coconuts."""
+    """Palm: leaning trunk of stacked two-tone segments, seven arching fronds and a few coconuts.
+    The lean is strongest at the base and eases off to vertical at the top, so the trunk flows into the upright crown."""
     p = Piece("TreePalm", bevel=0.0, flat=PLANT_FLAT)
-    pts = [(0.08 * k * k, 0, 1.75 * k) for k in range(8)]
+    pts = [(3.9 * math.sin(math.pi / 2 * k / 7), 0, 1.75 * k) for k in range(8)]
     for k in range(7):
         r = 1.05 - 0.07 * k
         p.limb("wood" if k % 2 == 0 else "woodDark", pts[k], pts[k + 1], r, r + 0.16, 6)
@@ -861,6 +991,8 @@ def run(render=True, only=None, name="ZooKit"):
     old = bpy.data.scenes.get("ZooKit")
     if old:
         for ob in list(old.collection.all_objects): bpy.data.objects.remove(ob, do_unlink=True)
+        for me in list(bpy.data.meshes):   # orphans from the last run would push new names to "<Piece>__<colour>.001"
+            if me.users == 0: bpy.data.meshes.remove(me)
         scene = old
     else:
         scene = bpy.data.scenes.new("ZooKit")
