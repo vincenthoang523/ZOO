@@ -15,6 +15,7 @@ Everything is uploaded to group `229775176`. Uploads are permanent, so a changed
 | 108658743696915 | ZooKit_Props_v2 | `blender/export/ZooKit_Props_v2.glb` |
 | 87748702725793 | ZooKit_Board_v2 (single-pole Top Earners board) | `blender/export/ZooKit_Board_v2.glb` |
 | 74251838140516 | ZooKit_EnclosurePalm_v3 (mesh enclosure with rock wall and waterfall, curved palm) | `blender/export/ZooKit_EnclosurePalm_v3.glb` |
+| 117771398757994 | ZooKit_Enclosure_v4 (rock behind the waterfall pool) | `blender/export/ZooKit_Enclosure_v4.glb` |
 
 In Studio, the imported pieces become templates in `ServerStorage.ZooKit`, and copies of them are placed in `workspace.Zoo.Art`.
 
@@ -28,10 +29,14 @@ In Studio, the imported pieces become templates in `ServerStorage.ZooKit`, and c
 
 | Asset id | Image | Source file |
 |---|---|---|
-| 71013397557210 | WaterfallStreaks_v2: vertical streaks, used by the enclosure waterfall Beams | `blender/export/WaterfallStreaks.png` |
+| 76830687438614 | WaterfallBody: soft wavy bands, body layer of the fall and the pool | `blender/export/WaterfallBody.png` |
+| 123457945444194 | WaterfallWisps: thin tapered wisps, two layers on the fall | `blender/export/WaterfallWisps.png` |
+| 81721995905362 | FoamPuffs: 2x2 flipbook of foam clusters for splash, spray, mist and churn | `blender/export/FoamPuffs.png` |
+| 74750638253978 | Droplets: 2x2 flipbook of droplets | `blender/export/Droplets.png` |
+| 71013397557210 | WaterfallStreaks_v2: hard streaks (replaced by Body and Wisps; unused) | `blender/export/WaterfallStreaks.png` |
 | 82233352105274 | WaterfallStreaks (first try, streaks ran sideways on the Beam; unused) | none |
 
-A Beam lays an image's height along its length, so streaks have to be drawn vertically.
+A Beam lays an image's height along its length, so streaks have to be drawn vertically. For a flipbook, setting the emitter's FlipbookFramerate to 0 and FlipbookStartRandom to true gives each particle one random frame that it keeps.
 
 ## Icons (Image assets)
 

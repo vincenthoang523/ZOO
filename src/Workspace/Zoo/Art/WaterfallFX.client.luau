@@ -27,3 +27,15 @@ end
 
 for _, ring in CS:GetTagged("WaterfallRipple") do task.spawn(animate, ring) end
 CS:GetInstanceAddedSignal("WaterfallRipple"):Connect(animate)
+
+-- Irregular gushes: every waterfall's "Burst" emitters (Rate 0, tagged "WaterfallBurst") fire a random handful at random
+-- moments, so the splash never settles into a steady loop.
+local rng = Random.new()
+local function gush(emitter)
+	while emitter.Parent do
+		task.wait(rng:NextNumber(0.25, 1.2))
+		emitter:Emit(rng:NextInteger(2, 9))
+	end
+end
+for _, e in CS:GetTagged("WaterfallBurst") do task.spawn(gush, e) end
+CS:GetInstanceAddedSignal("WaterfallBurst"):Connect(gush)

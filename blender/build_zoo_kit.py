@@ -284,6 +284,9 @@ def _rock_wall(p):
         if not gap(x, 2.3): boulder((x, rnd.uniform(-13.3, -12.3), crest(x) - 0.4), rnd.uniform(1.7, 2.3))
         x += rnd.uniform(2.3, 3.0)
     for s in (-1, 1): boulder((WF_X + s * 2.9, -12.0, crest(WF_X + s * 2.9) + 0.3), 1.9, (1.0, 0.9, 1.2))   # gorge walls
+    # back of the pool: rock rising behind the channel, so the water wells out of the cliff instead of a cut-off slab
+    boulder((WF_X, -13.7, WF_LIP + 1.0), 1.8, (1.35, 0.9, 1.0))
+    for s in (-1, 1): boulder((WF_X + s * 1.5, -13.4, WF_LIP + 0.4), 1.4, (1.0, 0.9, 1.0))
     x = -14.8
     while x < 15.4:                                              # face boulders, centres on the wall face
         for z in (2.6, 5.4):
@@ -304,7 +307,7 @@ def _rock_wall(p):
 def _waterfall(p):
     """Water sheet that starts inside the channel, rolls over the lip and drops into the pond; foam on the lip and at
     the base, a ripple ring Studio animates, and a stone-rimmed pond that runs back into the cliff foot."""
-    path = [(-13.2, WF_LIP + 0.15), (-11.7, WF_LIP + 0.2), (-11.0, WF_LIP + 0.05), (-10.6, WF_LIP - 0.6),
+    path = [(-12.7, WF_LIP + 0.15), (-11.7, WF_LIP + 0.2), (-11.0, WF_LIP + 0.05), (-10.6, WF_LIP - 0.6),
             (-10.45, WF_LIP - 1.6), (-10.4, 3.0), (-10.4, 0.5)]
     verts, faces, th = [], [], 0.14
     for i, (y, z) in enumerate(path):
