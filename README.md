@@ -14,6 +14,8 @@ This repo is the record of the game's source: scripts, Blender models and where 
 | `src/ReplicatedStorage/Zoo/Config.luau` | Every tunable number: rarities, mutations, prices, daily rewards, icon ids, animal templates |
 | `src/ReplicatedStorage/Zoo/Render.luau` | Drawing format (run-length encoded 240×168 grid), drawing to GUI, the judge's scoring, server-side checks |
 | `src/ServerScriptService/ZooServer.server.luau` | Player data, plots, income, rarity rolls, purchases, admin `/reset` |
+| `src/ServerStorage/EnclosureBuilder.luau` | Builds the 7 plot enclosures (`workspace.Zoo.Art.Enclosure1-7`) from Parts and copies of the kit props. Run from the command bar |
+| `src/ServerStorage/EnclosureCheck.luau` | Checks that no enclosure part is floating or unanchored |
 | `src/StarterPlayer/StarterPlayerScripts/ZooClient.client.luau` | All UI (HUD, menus, draw editor, roll screen), walking animals, plot signs, Top Earners board, intro cinematic |
 | `blender/build_zoo_kit.py` | Builds every map mesh in code inside Blender and exports `.glb` files |
 | `blender/DrawAZoo_Kit.blend` | The Blender scene the script builds |

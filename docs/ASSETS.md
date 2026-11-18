@@ -7,7 +7,7 @@ Everything is uploaded to group `229775176`. Uploads are permanent, so a changed
 | Asset id | Kit | Source file |
 |---|---|---|
 | 121294579115273 | ZooKit (first full kit) | `blender/export/ZooKit.glb` |
-| 127314970843295 | ZooKit_Enclosure_v2 | `blender/export/ZooKit_Enclosure_v2.glb` |
+| 127314970843295 | ZooKit_Enclosure_v2 (replaced in the map on 2026-11-18 by `EnclosureBuilder`; copies kept in `ServerStorage.OldEnclosures`) | `blender/export/ZooKit_Enclosure_v2.glb` |
 | 100753643072663 | ZooKit_Plants_v2 | `blender/export/ZooKit_Plants_v2.glb` |
 | 115179040051603 | ZooKit_Plants_v3 | `blender/export/ZooKit_Plants_v3.glb` |
 | 140253047514197 | ZooKit_Trees_v4 | `blender/export/ZooKit_Trees_v4.glb` |
