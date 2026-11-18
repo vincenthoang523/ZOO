@@ -2,6 +2,16 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-18
+
+- **Enclosures rebuilt (place v54):**
+  - All 7 plots have a new enclosure, built by `ServerStorage.EnclosureBuilder` in Studio rather than in Blender.
+  - What's in it: a stone base with cream trim, wooden fences with posts in the plot's colour, and lanterns on the front corners. At the back is a cliff of the kit's faceted Rock mesh, with bushes, a waterfall and a pond, under a gateway arch with a striped scalloped awning and a paw sign. Inside are a palm, a feeding trough, sand and grass patches, grass tufts and flowers.
+  - The props are copies of the kit pieces (Rock, Bush, BushFlower, TreePalm, GrassTuft, Flowers). Every other plot is mirrored.
+  - The animals' wander area (Pen-local |x| <= 11.25, |z| <= 7.5) stays clear, and the floor top stays at y ~0.46.
+  - The old `ZooKit_Enclosure_v2` copies are kept in `ServerStorage.OldEnclosures`.
+- **No floating parts:** `ServerStorage.EnclosureCheck` walks outward from the ground through every pair of touching parts. It uses exact box tests for Parts and the real collision shape for meshes (`GetPartsInPart`). Result: 235 parts per enclosure, 0 floating, 0 unanchored. Lifting a post cap or a grass tuft by 0.3 studs is caught.
+
 ## 2026-11-17
 
 - **Camera:** after the intro, the camera now sits behind the player and faces their own zoo head-on. Max zoom-out is halved, from 128 to 64 studs (place v52).
