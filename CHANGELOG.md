@@ -4,7 +4,7 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-19
 
-- **Trader stall rebuilt** in the style of the new enclosure gateways, by `trader_stall()` in `blender/build_zoo_kit.py`, exported as `ZooKit_Trader_v2`.
+- **Trader stall rebuilt** in the style of the new enclosure gateways, by `trader_stall()` in `blender/build_zoo_kit.py`, uploaded as `ZooKit_Trader_v2` (place v64).
   - Stone plinth with a cream rim, a plank deck and a cream front step.
   - Four round cream pillars with stone feet, red collars, dark capitals and curved knee braces, carrying beams with a cream cornice.
   - A red and cream gabled canvas roof with scalloped valances front and back, a ridge cap with yellow finials, and red paw medallions on both gables.
