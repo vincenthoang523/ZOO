@@ -16,6 +16,7 @@ Everything is uploaded to group `229775176`. Uploads are permanent, so a changed
 | 87748702725793 | ZooKit_Board_v2 (single-pole Top Earners board) | `blender/export/ZooKit_Board_v2.glb` |
 | 74251838140516 | ZooKit_EnclosurePalm_v3 (mesh enclosure with rock wall and waterfall, curved palm) | `blender/export/ZooKit_EnclosurePalm_v3.glb` |
 | 117771398757994 | ZooKit_Enclosure_v4 (rock behind the waterfall pool) | `blender/export/ZooKit_Enclosure_v4.glb` |
+| 130780260830533 | ZooKit_Trader_v2 (trader stall in the enclosure gateway style) | `blender/export/ZooKit_Trader_v2.glb` |
 
 In Studio, the imported pieces become templates in `ServerStorage.ZooKit`, and copies of them are placed in `workspace.Zoo.Art`.
 
