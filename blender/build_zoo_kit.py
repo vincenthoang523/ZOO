@@ -784,93 +784,135 @@ def _crate(p, x, y, z, s=1.0):
     for zz in (0.2, 1.4): p.box("plankAlt", (1.86 * s, 1.86 * s, 0.22 * s), T(x, y, z + zz * s))
 
 
+TRADER_SIGN = (0.0, 5.78, 15.1)    # centre of the Roblox Sign part (12 x 2.6 x 0.4) in piece space; Studio puts it there
+
+
 def trader_stall():
-    """Safari Sam's market stall. Front +Y, ground at z=0. The roof is striped canvas with a scalloped valance; the counter
-    front is a framed zebra panel built from clean, evenly spaced stripes."""
-    p = Piece("TraderStall", bevel=0.1, flat=("hay",), bevels={"ink": 0.0, "zebra": 0.0, "red": 0.04, "cream": 0.04, "rope": 0.0, "glass": 0.0, "glow": 0.0, "brass": 0.03,
-                                                               "plankAlt": 0.04, "cap": 0.02, "iron": 0.03, "yellow": 0.0, "leafLight": 0.0})
-    # deck: dark frame, ten boards in two shades
-    p.box("woodDark", (18.4, 11.4, 0.35), T(0, 0, 0.175))
+    """Safari Sam's market stall, in the same language as the enclosure gateway. Front +Y, ground at z=0.
+    Stone plinth with a cream rim and plank deck, four round cream pillars with red collars and curved knee braces,
+    a beam with a cream cornice, a red/cream gabled canvas roof with scalloped valances and yellow finials, and a
+    framed sign standing on the front slope (the text stays a Roblox SurfaceGui on the Sign part). Sam stands on
+    the deck at z 0.71; the counter top is at z 4.45. Every piece overlaps the next; floating_report() must be []."""
+    p = Piece("TraderStall", bevel=0.1, flat=("hay", "leaf", "leafLight", "leafDark"),
+              bevels={"stone": 0.15, "cream": 0.08, "red": 0.05, "wood": 0.1, "woodDark": 0.08, "plank": 0.05, "plankAlt": 0.04,
+                      "rope": 0.0, "glass": 0.0, "glow": 0.0, "brass": 0.03, "cap": 0.02, "iron": 0.03, "yellow": 0.0, "paw": 0.0})
+    face = lambda col, x, y, z, r, h: p.lathe(col, [(r, 0), (r, h)], 14, T(x, y, z) @ Rx(-90))   # disc facing the front
+
+    # plinth: stone slab, cream rim, ten deck boards in two shades, a cream step in front
+    p.extrude("stone", rrect(19.6, 12.4, 1.0), 0.5, I, 'XY')
+    p.frame("cream", rrect(19.8, 12.6, 1.05), rrect(18.4, 11.2, 0.6), 0.23, T(0, 0, 0.45))
     for k in range(10):
-        p.box("plank" if k % 2 == 0 else "plankAlt", (18.0, 1.0, 0.25), T(0, -4.95 + k * 1.1, 0.475))
-    # posts with stone plinths, beams, knee braces
+        p.box("plank" if k % 2 == 0 else "plankAlt", (18.3, 1.1, 0.24), T(0, -4.95 + k * 1.1, 0.59))
+    p.extrude("cream", rrect(9.0, 1.6, 0.5), 0.28, T(0, 7.0, 0), 'XY')
+
+    # four round pillars: stone foot, cream shaft, two red collars, dark capital
+    PX, PY = 7.5, 4.5
     for sx in (-1, 1):
         for sy in (-1, 1):
-            p.box("stone", (1.5, 1.5, 0.6), T(sx * 7.5, sy * 4.5, 0.9))
-            p.box("wood", (0.9, 0.9, 12.6), T(sx * 7.5, sy * 4.5, 7.5))
-            p.box("woodDark", (1.15, 1.15, 0.35), T(sx * 7.5, sy * 4.5, 4.3))
-        p.box("wood", (0.7, 9.8, 0.7), T(sx * 7.5, 0, 13.55))
-        for sy in (-1, 1):
-            p.limb("woodDark", (sx * 7.5, sy * 4.5, 11.2), (sx * 5.7, sy * 4.5, 13.3), 0.22, 0.22, 4)
-    for sy in (-1, 1): p.box("wood", (16.4, 0.7, 0.7), T(0, sy * 4.5, 13.55))
-    # roof: eight canvas strips alternating cream / red, ridge cap, scalloped valance front and back
-    prof = [(-6.4, 13.85), (0, 16.9), (6.4, 13.85), (6.4, 13.5), (0, 16.55), (-6.4, 13.5)]
-    for k in range(8):
-        p.extrude("cream" if k % 2 == 0 else "red", prof, 2.45, T(-8.575 + k * 2.45, 0, 0) @ Rz(90))
-    p.box("woodDark", (20.0, 0.7, 0.45), T(0, 0, 17.05))
+            L = T(sx * PX, sy * PY, 0)
+            p.lathe("stone", [(1.05, 0.4), (1.05, 1.3), (0.8, 1.6), (0, 1.6)], 12, L)
+            p.lathe("cream", [(0.6, 1.5), (0.6, 12.3), (0, 12.3)], 12, L)
+            for z in (4.4, 9.0): p.lathe("red", [(0.72, z), (0.72, z + 0.45), (0, z + 0.45)], 12, L)
+            p.lathe("woodDark", [(0.66, 11.7), (0.95, 12.1), (0.95, 12.6), (0, 12.6)], 12, L)
+    # beams on the capitals, cream cornice on the beams, curved knee braces front and back
     for sy in (-1, 1):
+        p.box("wood", (17.6, 0.9, 1.0), T(0, sy * PY, 13.0))
+        p.box("cream", (18.4, 1.0, 0.3), T(0, sy * PY + sy * 0.05, 13.6))
+        for sx in (-1, 1):
+            brace = [(7.3, 10.2), (7.3, 12.7), (4.8, 12.7)] + [(4.8 + 2.5 * math.cos(math.radians(a)), 10.2 + 2.5 * math.sin(math.radians(a))) for a in range(80, 0, -16)]
+            p.extrude("wood", [(sx * x, z) for x, z in brace], 0.5, T(0, sy * PY, 0))
+    for sx in (-1, 1):
+        p.box("wood", (0.9, 9.9, 1.0), T(sx * PX, 0, 13.0))
+        p.box("cream", (1.0, 9.9, 0.3), T(sx * PX, 0, 13.6))
+        # gable truss under the roof, sitting on the side cornice
+        p.extrude("wood", [(-4.4, 13.7), (4.4, 13.7), (4.4, 13.95), (0, 17.25), (-4.4, 13.95)], 0.6, T(sx * PX, 0, 0) @ Rz(90))
+        # red paw medallion on the outside of each gable
+        G = lambda col, y, z, r, d: p.lathe(col, [(r, 0), (r, 0.12)], 14, T(sx * (PX + 0.25 + d), y, z) @ Ry(sx * 90))
+        G("red", 0, 15.0, 1.0, 0)
+        G("paw", 0, 14.85, 0.36, 0.06)
+        for dy, dz in ((-0.45, 0.36), (-0.16, 0.58), (0.16, 0.58), (0.45, 0.36)): G("paw", dy, 14.85 + dz, 0.15, 0.06)
+
+    # roof: underside z = 17.2 - 0.75|y|, 0.35 thick; eight canvas strips, ridge cap, finials
+    prof = [(-6.6, 12.25), (0, 17.2), (6.6, 12.25), (6.6, 12.6), (0, 17.55), (-6.6, 12.6)]
+    W = 2.3
+    for k in range(8):
+        p.extrude("red" if k % 2 == 0 else "cream", prof, W, T(-3.5 * W + k * W, 0, 0) @ Rz(90))
+    p.box("woodDark", (19.0, 0.8, 0.5), T(0, 0, 17.6))
+    for sx in (-1, 1):
+        p.lathe("yellow", [(0, 17.55), (0.5, 17.7), (0.72, 18.25), (0.5, 18.8), (0, 18.95)], 10, T(sx * 9.5, 0, 0))
+    # scalloped valance front and back: a cream strip under the eave and one scallop per canvas strip
+    for sy in (-1, 1):
+        p.box("cream", (18.4, 0.2, 0.45), T(0, sy * 6.65, 12.2))
         for k in range(8):
-            x0 = -9.8 + k * 2.45
-            arc = [(x0 + 2.45 * (1 - math.cos(math.pi * j / 8)) / 2, 13.55 - 0.85 * math.sin(math.pi * j / 8)) for j in range(9)]
-            p.extrude("red" if k % 2 == 0 else "cream", [(x0, 13.85)] + arc[::-1][:0] + [(x0 + 2.45, 13.85)] + arc[::-1], 0.14, T(0, sy * 6.45, 0))
-    # counter: dark body, plank top, framed zebra front
-    p.box("woodDark", (15.0, 2.4, 3.4), T(0, 3.2, 2.3))
-    p.box("plank", (16.2, 3.2, 0.45), T(0, 3.2, 4.225))
-    p.box("plankAlt", (16.4, 0.3, 0.3), T(0, 4.75, 4.1))
-    p.box("wood", (15.2, 0.25, 0.5), T(0, 4.48, 0.85))
-    p.box("wood", (15.2, 0.25, 0.4), T(0, 4.48, 3.8))
-    for x in (-7.25, 0, 7.25): p.box("wood", (0.5, 0.25, 3.4), T(x, 4.48, 2.3))
-    for sx in (-1, 1): p.box("zebra", (6.75, 0.06, 2.5), T(sx * 3.625, 4.43, 2.35))
-    # zebra print: smooth S-curved bands, thick where they start and tapering to a point, alternating from top and bottom
-    reach = [0.92, 0.62, 0.85, 0.7, 0.95, 0.58]
+            cx = -3.5 * W + k * W
+            r = W / 2
+            pts = [(cx - r, 12.3), (cx - r, 11.95)] + [(cx + r * math.cos(math.radians(a)), 11.95 + r * 0.8 * math.sin(math.radians(a))) for a in range(200, 360, 20)] + [(cx + r, 11.95), (cx + r, 12.3)]
+            p.extrude("red" if k % 2 == 0 else "cream", pts, 0.16, T(0, sy * 6.8, 0))
+
+    # sign standing on the front slope: dark backing, cream frame, two struts back to the roof, yellow knobs
+    sx0, sy0, sz0 = TRADER_SIGN
+    p.extrude("woodDark", [(x, z + sz0) for x, z in rrect(13.4, 3.6, 0.6)], 0.35, T(0, 5.35, 0))
+    p.extrude("cream", [(x, z + sz0) for x, z in rrect(12.9, 3.1, 0.45)], 0.1, T(0, 5.57, 0))
     for sx in (-1, 1):
-        for k in range(6):
-            xc = sx * (0.75 + k * 1.1)
-            down = (k + (sx > 0)) % 2 == 0
-            zb, span = (3.6, -2.5) if down else (1.1, 2.5)
-            sway = 0.3 * (1 if k % 2 else -1)
-            left, right = [], []
-            for i in range(9):
-                t = reach[k] * i / 8
-                cx = xc + sway * math.sin(math.pi * t)
-                w = 0.42 * (1 - t / reach[k]) ** 0.8 + 0.01
-                z = zb + span * t
-                left.append((cx - w, z)); right.append((cx + w, z))
-            p.extrude("ink", left + right[::-1], 0.05, T(0, 4.48, 0))
-    # sign frame (the sign text stays a Roblox SurfaceGui on the board inside it) and its hanging ropes
-    for z in (9.75, 12.85): p.box("wood", (12.8, 0.55, 0.3), T(0, 5.5, z))
+        p.limb("wood", (sx * 4.5, 5.3, 15.6), (sx * 4.5, 3.6, 14.7), 0.18, 0.18, 6)
+        p.lathe("yellow", [(0, 16.5), (0.38, 16.62), (0.48, 16.95), (0.38, 17.28), (0, 17.4)], 8, T(sx * 6.35, 5.35, 0))
+
+    # lanterns hanging from the front beam, clear of the braces
     for sx in (-1, 1):
-        p.box("wood", (0.3, 0.55, 3.4), T(sx * 6.25, 5.5, 11.3))
-        p.limb("rope", (sx * 5.2, 5.5, 13.0), (sx * 5.0, 4.6, 13.2), 0.07, 0.07, 4)
-    # lanterns on the front posts
-    for sx in (-1, 1):
-        x = sx * 6.6
-        p.limb("iron", (sx * 7.1, 4.5, 11.6), (x, 5.15, 11.6), 0.08, 0.08, 4)
-        p.lathe("iron", [(0.55, 10.5), (0.55, 10.62), (0, 10.62)], 6, T(x, 5.15, 0))
-        p.box("glow", (0.7, 0.7, 0.85), T(x, 5.15, 11.05))
-        for dx in (-1, 1):
-            for dy in (-1, 1): p.box("iron", (0.1, 0.1, 0.9), T(x + dx * 0.37, 5.15 + dy * 0.37, 11.05))
-        p.lathe("iron", [(0.6, 11.48), (0.25, 11.85), (0, 11.85)], 6, T(x, 5.15, 0))
+        x = sx * 3.9
+        p.limb("iron", (x, PY, 12.6), (x, PY, 11.7), 0.06, 0.06, 4)
+        p.lathe("iron", [(0.5, 11.45), (0.5, 11.6), (0.2, 11.85), (0, 11.85)], 6, T(x, PY, 0))
+        p.lathe("glow", [(0, 10.5), (0.35, 10.6), (0.42, 11.05), (0.35, 11.5), (0, 11.55)], 6, T(x, PY, 0))
+        p.lathe("iron", [(0.3, 10.42), (0.3, 10.6), (0, 10.6)], 6, T(x, PY, 0))
+
+    # counter: dark body between the front pillars, stone kick, plank front, red band, plank top, paw plaque
+    p.box("woodDark", (14.2, 2.2, 3.4), T(0, 3.2, 2.3))
+    p.box("stone", (14.3, 0.35, 0.5), T(0, 4.4, 0.85))
+    for k in range(13):
+        p.box("plank" if k % 2 == 0 else "plankAlt", (1.0, 0.15, 2.65), T(-6.48 + k * 1.08, 4.35, 2.35))
+    p.box("red", (14.3, 0.3, 0.35), T(0, 4.42, 3.75))
+    p.box("plank", (15.6, 3.2, 0.45), T(0, 3.4, 4.225))
+    p.box("plankAlt", (15.8, 0.3, 0.3), T(0, 5.05, 4.1))
+    face("cream", 0, 4.38, 2.3, 1.2, 0.1)
+    face("red", 0, 4.45, 2.3, 1.02, 0.1)
+    face("paw", 0, 4.5, 2.15, 0.42, 0.1)
+    for dx, dz in ((-0.52, 0.42), (-0.19, 0.67), (0.19, 0.67), (0.52, 0.42)): face("paw", dx, 4.5, 2.15 + dz, 0.17, 0.1)
     # on the counter: two crates, a fruit basket and a brass bell
     _crate(p, 5.4, 3.0, 4.45)
     _crate(p, 3.6, 3.3, 4.45, 0.7)
     p.lathe("rope", [(0.9, 4.45), (1.2, 5.25), (1.1, 5.25), (0.8, 4.6), (0, 4.6)], 10, T(-4.6, 3.2, 0))
     for i, (dx, dy, col) in enumerate(((-0.35, -0.2, "red"), (0.35, 0.1, "yellow"), (0, 0.4, "leafLight"), (-0.1, -0.5, "red"))):
-        p.ico(col, 0.4, 1, T(-4.6 + dx, 3.2 + dy, 5.35 + (i % 2) * 0.12))
+        p.ico(col, 0.42, 1, T(-4.6 + dx, 3.2 + dy, 4.98 + (i % 2) * 0.14))   # resting on the basket floor (z 4.6) and each other
     p.lathe("brass", [(0.45, 4.45), (0.45, 4.52), (0.32, 4.6), (0.3, 4.9), (0.12, 5.05), (0.08, 5.25), (0, 5.25)], 8, T(-1.8, 3.6, 0))
-    # back shelf behind Sam: two boards, crates and jars
-    for z in (3.2, 6.0):
-        p.box("plank", (13.0, 1.3, 0.25), T(0, -4.0, z))
-    for sx in (-1, 1): p.box("wood", (0.3, 1.3, 6.2), T(sx * 6.4, -4.0, 3.4))
-    _crate(p, -4.4, -4.0, 3.33, 0.7)
-    _crate(p, 4.2, -4.0, 6.13, 0.65)
-    for i, x in enumerate((-1.8, -0.7, 0.4, 1.5)):
-        p.lathe("glass", [(0.32, 3.33), (0.36, 3.6), (0.36, 4.2), (0.25, 4.35), (0, 4.35)], 8, T(x, -4.0, 0))
-        p.lathe("cap", [(0.27, 4.33), (0.27, 4.5), (0, 4.5)], 8, T(x, -4.0, 0))
-    # hay bales stacked by the back post
-    for z, w in ((0.6, 3.2), (2.2, 2.6)):
-        p.box("hay", (w, 1.8, 1.6), T(-6.0, -1.8, z + 0.8))
-        for dx in (-0.7, 0.7): p.box("rope", (0.12, 1.84, 1.64), T(-6.0 + dx * w / 3.2, -1.8, z + 0.8))
+
+    # low side walls between the pillars, with a cream rail
+    for sx in (-1, 1):
+        p.box("plankAlt", (0.35, 8.2, 3.0), T(sx * PX, 0, 2.1))
+        p.box("cream", (0.6, 8.4, 0.3), T(sx * PX, 0, 3.75))
+    # back wall of vertical boards behind Sam, two shelves on brackets, jars and crates
+    for k in range(13):
+        p.box("plank" if k % 2 == 0 else "plankAlt", (1.0, 0.3, 6.4), T(-6.48 + k * 1.08, -PY, 3.8))
+    p.box("cream", (14.0, 0.5, 0.3), T(0, -PY, 7.1))
+    for z in (3.3, 5.6):
+        p.box("wood", (12.0, 1.2, 0.22), T(0, -3.78, z))
+        for x in (-5.0, 5.0): p.box("woodDark", (0.25, 1.0, 0.6), T(x, -3.85, z - 0.4))
+    for x in (-1.8, -0.7, 0.4, 1.5):
+        p.lathe("glass", [(0.32, 3.4), (0.36, 3.65), (0.36, 4.25), (0.25, 4.4), (0, 4.4)], 8, T(x, -3.7, 0))
+        p.lathe("cap", [(0.27, 4.38), (0.27, 4.55), (0, 4.55)], 8, T(x, -3.7, 0))
+    _crate(p, -4.0, -3.75, 3.41, 0.6)
+    _crate(p, 3.8, -3.75, 5.71, 0.6)
+    _crate(p, -2.6, -3.75, 5.71, 0.5)
+    # hay bales in the back-left corner, crates in the back-right
+    for z, w in ((0.7, 3.0), (2.3, 2.4)):
+        p.box("hay", (w, 1.8, 1.6), T(-5.4, -2.0, z + 0.8))
+        for dx in (-0.7, 0.7): p.box("rope", (0.12, 1.84, 1.64), T(-5.4 + dx * w / 3.0, -2.0, z + 0.8))
+    _crate(p, 5.4, -2.2, 0.71)
+    _crate(p, 5.5, -2.1, 2.31, 0.7)
+    # potted bushes on the front corners of the plinth
+    for sx in (-1, 1):
+        x, y = sx * 8.9, 5.4
+        p.lathe("stone", [(0.5, 0.6), (0.65, 1.5), (0, 1.5)], 10, T(x, y, 0))
+        p.blob(0.8, 2, T(x, y, 1.85), lobes=5, amp=0.25, seed=40 + sx)
     return p
 
 

@@ -2,6 +2,18 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-19
+
+- **Trader stall rebuilt** in the style of the new enclosure gateways, by `trader_stall()` in `blender/build_zoo_kit.py`, exported as `ZooKit_Trader_v2`.
+  - Stone plinth with a cream rim, a plank deck and a cream front step.
+  - Four round cream pillars with stone feet, red collars, dark capitals and curved knee braces, carrying beams with a cream cornice.
+  - A red and cream gabled canvas roof with scalloped valances front and back, a ridge cap with yellow finials, and red paw medallions on both gables.
+  - The ANIMAL TRADER sign stands on the front slope of the roof in a cream frame with two struts and yellow knobs. The text is still the `Sign` part's SurfaceGui.
+  - A plank counter with a red band and a paw badge, a fruit basket, a bell and crates; low side walls; a back wall with two shelves of jars and crates; hay bales and crates inside; potted bushes on the front corners; two hanging lanterns.
+  - `floating_report()` comes back empty. It also caught that the old stall's fruit floated 0.35 studs above the basket floor; the fruit now rests on it.
+  - `ServerStorage.StallBuilder` swaps the art in and moves the invisible colliders to match (deck, counter, counter top, and new back and side walls). Sam is raised onto the new deck. The old art is kept in `ServerStorage.OldSafariStall`.
+  - `ServerStorage.StallCheck` checks the placed stall in Studio (everything reaches the plaza through touching parts). `EnclosureCheck.model` gained optional `skip` and `ground` arguments for it.
+
 ## 2026-11-18
 
 - **Enclosures:** the part-built enclosures are replaced by one Blender mesh, `ZooKit_EnclosurePalm_v3`, built by `enclosure()` in `blender/build_zoo_kit.py` (place v59).
