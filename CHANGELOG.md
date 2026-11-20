@@ -4,7 +4,7 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-20
 
-- **Race driving:** racers now sit on their animal and drive it like a car (place v80).
+- **Race driving:** racers now sit on their animal and drive it like a car (place v78).
   - **The car:** the cutout is built into a small car: an invisible low body with no friction, a VehicleSeat on the cutout's back, a LinearVelocity and an AlignOrientation. The driver's client owns its physics.
   - **Controls:** WASD, the arrow keys, a gamepad or the mobile thumbstick drive the car through the seat.
   - **Speed:** the car pulls away slowly, eases up to 40 in about 5 seconds and coasts down when you let go. S brakes, then reverses at up to 10.
