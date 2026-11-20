@@ -1,8 +1,10 @@
 -- RaceBuilder: lays the animal race out round the zoo from the Blender pieces in ServerStorage.ZooKit
--- (blender/build_zoo_kit.py: race_track, race_start, race_log, race_hay, race_rocks, race_mud, boost_ring, race_pad)
+-- (blender/build_zoo_kit.py: race_track, race_start, race_log, race_hay, race_rocks, race_mud, boost_ring, race_pad,
+-- border_fence)
 -- at the spots in ReplicatedStorage.Zoo.RaceLayout. Builds workspace.Zoo.Race:
 --   Track (visual mesh), Collision (ring of invisible boxes under the gravel), Start, Rings (tagged "BoostRing"),
---   Obstacles, Pad (with the RacePrompt and a live status board).
+--   Border (rail fence plus an invisible wall), Obstacles, Pad (with the RacePrompt and a live status board).
+-- Not built here (one-off, see CHANGELOG 2026-11-20): Art.MapGround with Colliders.GroundCollider, Colliders.GateDoor.
 -- Run from the command bar:  require(game.ServerStorage.RaceBuilder:Clone()).build()
 local Builder = {}
 
@@ -72,6 +74,22 @@ function Builder.build()
 		local len = 2 * math.pi * (mid + w / 2) / n + 0.6
 		box(col, "Gravel", CFrame.new(mid * math.cos(math.rad(a)), L.TOP - 1, -mid * math.sin(math.rad(a))) * CFrame.Angles(0, math.rad(a), 0), Vector3.new(w, 2, len))
 	end
+	-- the island's earth rim between the hedge and the gravel, and a ramp down the track's outer shoulder to the plain:
+	-- the meshes there have no collision, so without these a player drops into a ditch a racer can't jump out of
+	for i = 0, n - 1 do
+		local a = 360 * (i + 0.5) / n
+		local r0, r1 = L.edges(a)
+		local ar = math.rad(a)
+		local rimMid, rimW = (126 + r0) / 2, r0 - 126 + 1
+		box(col, "Rim", CFrame.new(rimMid * math.cos(ar), -2, -rimMid * math.sin(ar)) * CFrame.Angles(0, ar, 0), Vector3.new(rimW, 2, 2 * math.pi * r0 / n + 0.6))
+		local r = r1 + 5.5 -- the slope runs from the collision's outer edge (r1 + 2.5, gravel height) down to the plain at r1 + 8.5
+		local pos = Vector3.new(r * math.cos(ar), -3.3 + 1.225, -r * math.sin(ar))
+		local w = Instance.new("WedgePart")
+		w.Name, w.Anchored, w.Transparency, w.CanTouch, w.CastShadow = "Shoulder", true, 1, false, false
+		w.Size = Vector3.new(2 * math.pi * (r1 + 8.5) / n + 0.6, 2.45, 6)
+		w.CFrame = CFrame.lookAt(pos, pos + Vector3.new(math.cos(ar), 0, -math.sin(ar))) -- high side (+Z) toward the track
+		w.Parent = col
+	end
 
 	-- start / finish arch: the mesh has no collision (its hull would close the track); two boxes stand in for the posts
 	local start = place("RaceStart", L.frame(L.START_A), root)
@@ -88,6 +106,16 @@ function Builder.build()
 		m.boost.Material = Enum.Material.Neon
 		m:SetAttribute("Index", i)
 		CollectionService:AddTag(m, "BoostRing")
+	end
+
+	-- border: a rail fence round the loop, and a tall invisible wall in it so nobody walks off into the scenery
+	local border = place("BorderFence", CFrame.new(), root)
+	border.Name = "Border"
+	local nw = 72
+	for i = 0, nw - 1 do
+		local a = math.rad(360 * (i + 0.5) / nw)
+		box(border, "Wall", CFrame.new(L.BORDER_R * math.cos(a), 4.7, -L.BORDER_R * math.sin(a)) * CFrame.Angles(0, a, 0),
+			Vector3.new(1, 18, 2 * math.pi * L.BORDER_R / nw + 0.6))
 	end
 
 	local obs = Instance.new("Folder")

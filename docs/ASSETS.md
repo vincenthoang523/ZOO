@@ -17,6 +17,7 @@ Everything is uploaded to group `229775176`. Uploads are permanent, so a changed
 | 74251838140516 | ZooKit_EnclosurePalm_v3 (mesh enclosure with rock wall and waterfall, curved palm) | `blender/export/ZooKit_EnclosurePalm_v3.glb` |
 | 117771398757994 | ZooKit_Enclosure_v4 (rock behind the waterfall pool) | `blender/export/ZooKit_Enclosure_v4.glb` |
 | 85122827813192 | ZooKit_Race (gravel race loop, start arch, log, hay, rocks, mud, boost ring, sign-up pad, opened gate) | `blender/export/ZooKit_Race.glb` |
+| 111350055854999 | ZooKit_Race_v2 (thin boost ring, round island ground, border fence) | `blender/export/ZooKit_Race_v2.glb` |
 
 In Studio, the imported pieces become templates in `ServerStorage.ZooKit`, and copies of them are placed in `workspace.Zoo.Art`.
 
@@ -67,4 +68,4 @@ Created through Open Cloud on 2026-11-19. Icons are drawn by `blender/make_pass_
 
 ## Race layout
 
-The track mesh is visual only. Collision comes from a ring of 120 invisible boxes that `RaceBuilder` lays under the gravel. The ring, obstacle, grid and pad positions are in `ReplicatedStorage.Zoo.RaceLayout`, which uses the same numbers as `blender/race_layout.py`. To move anything, edit both files, then run `require(game.ServerStorage.RaceBuilder:Clone()).build()` from the command bar.
+The track mesh is visual only. `RaceBuilder` lays the collision as invisible parts: 120 boxes under the gravel, rim boxes between the hedge and the track, wedge ramps down the outer shoulder, and a 72-piece wall in the border fence. The ring, obstacle, grid and pad positions are in `ReplicatedStorage.Zoo.RaceLayout`, which uses the same numbers as `blender/race_layout.py`. To move anything, edit both files, then run `require(game.ServerStorage.RaceBuilder:Clone()).build()` from the command bar.

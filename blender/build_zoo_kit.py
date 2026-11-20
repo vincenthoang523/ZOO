@@ -20,7 +20,7 @@ PAL = dict(grass="7CC86E", grassDark="5FB35A", leaf="46A050", leafLight="6FCB5F"
            screen="1E2840", blue="4AA3F0", dirt="D9A066", gold="F2B233", bulb="FFF1C2",
            cliff="E6E1D3", cliffDark="C9C2B2", moss="7CC86E", waterDeep="4FB2E3", foam="EAF8FF", ripple="EAF8FF",
            gravel="BDB19C", gravelDark="AEA18B", pebble="8E8474", pebbleLight="DDD5C4", mud="7A5235", mudWet="5A3A24",
-           boost="3FD8FF", boostLight="E8FBFF")
+           boost="3FD8FF", boostLight="E8FBFF", meadow="8DC266", meadowDark="7AB257")
 I = Matrix.Identity(4)
 
 
@@ -909,9 +909,10 @@ def race_mud():
 
 
 def boost_ring():
-    """Speed-boost hoop standing on the gravel: a candy-striped torus (axis along y, the running direction) on a stone foot."""
-    p = Piece("BoostRing", bevel=0.0, flat=("stone",))
-    R, r, SEG, SIDE, BANDS = 5.0, 0.55, 48, 8, 12
+    """Speed-boost hoop standing on the gravel: a thin candy-striped torus (axis along y, the running direction) whose
+    bottom sinks a hair into the gravel, so it stands on its own with no base block."""
+    p = Piece("BoostRing", bevel=0.0)
+    R, r, SEG, SIDE, BANDS = 5.0, 0.2, 72, 6, 16
     for band in range(BANDS):
         verts, faces = [], []
         i0, i1 = band * SEG // BANDS, (band + 1) * SEG // BANDS
@@ -920,14 +921,13 @@ def boost_ring():
             for j in range(SIDE):
                 v = 2 * math.pi * j / SIDE
                 d = R + r * math.cos(v)
-                verts.append((d * math.cos(u), r * math.sin(v), 5.0 + d * math.sin(u)))
+                verts.append((d * math.cos(u), r * math.sin(v), R + r * 0.5 + d * math.sin(u)))
         for i in range(i1 - i0):
             for j in range(SIDE):
                 a, b = i * SIDE + j, i * SIDE + (j + 1) % SIDE
                 faces.append((a, b, b + SIDE, a + SIDE))
         faces.append(tuple(range(SIDE))); faces.append(tuple(range((i1 - i0) * SIDE, (i1 - i0 + 1) * SIDE)))
         p.mesh("boost" if band % 2 == 0 else "boostLight", verts, faces)
-    p.box("stone", (2.6, 1.6, 0.7), T(0, 0, 0.1))
     return p
 
 
@@ -943,6 +943,60 @@ def race_pad():
         p.lathe("yellow", [(0, 8.1), (0.5, 8.4), (0.7, 8.9), (0.5, 9.4), (0, 9.6)], 8, T(sx * 4.4, -7.4, 0))
     p.box("wood", (10.0, 0.6, 3.6), T(0, -7.4, 6.0))
     p.box("cream", (9.0, 0.7, 2.8), T(0, -7.4, 6.0))                    # board face: Studio puts the text on its +y side
+    return p
+
+
+GROUND_TOP = -3.3                     # the plain round the island (Roblox Y): outskirt props stand on this
+
+
+def map_ground():
+    """The plain the zoo sits on, cut to the foliage: a wobbly low-poly disc of meadow (radius about 410, just past the outer
+    hills, which Studio pulls in to fit) with a rounded grass lip and a rocky underside tapering to a point, like a floating island.
+    Origin = zoo centre at Y 0. Visual only; Studio adds a cylinder for collision."""
+    p = Piece("MapGround", bevel=0.0, flat=("meadow", "meadowDark", "earth", "sandDark"))
+    N = 96
+    def R(a): return 410 + 6 * math.sin(5 * a + 0.4) + 4 * math.sin(11 * a + 2.1)
+    rnd = random.Random(9)
+    prof = lambda a: [(R(a) - 6, GROUND_TOP), (R(a), GROUND_TOP - 0.4), (R(a) + 1.2, GROUND_TOP - 1.6),
+                      (R(a) + 0.4 + rnd.uniform(-1, 1), GROUND_TOP - 7 + rnd.uniform(-1, 1)),
+                      (R(a) * 0.86 + rnd.uniform(-4, 4), GROUND_TOP - 22 + rnd.uniform(-3, 3)),
+                      (R(a) * 0.55 + rnd.uniform(-6, 6), GROUND_TOP - 48 + rnd.uniform(-4, 4))]
+    rings, verts = [], [(0, 0, GROUND_TOP)]
+    for i in range(N):
+        a = 2 * math.pi * i / N
+        pr = prof(a)
+        rings.append([len(verts) + k for k in range(len(pr))])
+        verts += [(r * math.cos(a), r * math.sin(a), z) for r, z in pr]
+    tip = len(verts); verts.append((0, 0, GROUND_TOP - 95))
+    faces = {"meadow": [], "meadowDark": [], "earth": [], "sandDark": []}
+    for i in range(N):
+        A, B = rings[i], rings[(i + 1) % N]
+        faces["meadow"].append((0, A[0], B[0]))                     # top fan, counter-clockwise from above
+        for k in range(len(A) - 1):
+            f = (A[k], A[k + 1], B[k + 1], B[k])
+            c = "meadow" if k == 0 else "meadowDark" if k == 1 else ("sandDark" if (i + k) % 3 == 0 or k >= 4 else "earth")
+            faces[c].append(f)
+        faces["sandDark"].append((A[-1], tip, B[-1]))
+    for c, fs in faces.items(): _raw(p, c, verts, fs)
+    return p
+
+
+BORDER_R = 176.0                      # border fence radius, just outside the track's earth shoulder
+
+
+def border_fence():
+    """Rustic post-and-rail fence round the whole race loop, standing on the plain. Origin = zoo centre at Y 0. Rails run
+    post to post in straight spans, each slotted into both posts. Studio adds a tall invisible wall for collision."""
+    p = Piece("BorderFence", bevel=0.08, bevels={"woodDark": 0.12})
+    n = 140
+    pts = [(BORDER_R * math.cos(2 * math.pi * i / n), BORDER_R * math.sin(2 * math.pi * i / n)) for i in range(n)]
+    for i, (x, y) in enumerate(pts):
+        p.lathe("woodDark", [(0.42, GROUND_TOP - 0.6), (0.42, GROUND_TOP + 4.3), (0.26, GROUND_TOP + 4.6), (0, GROUND_TOP + 4.6)], 6, T(x, y, 0))
+        x2, y2 = pts[(i + 1) % n]
+        mx, my, L = (x + x2) / 2, (y + y2) / 2, math.hypot(x2 - x, y2 - y)
+        yaw = math.degrees(math.atan2(y2 - y, x2 - x))
+        for z in (1.7, 3.5):
+            p.box("wood", (L + 0.5, 0.32, 0.42), T(mx, my, GROUND_TOP + z) @ Rz(yaw))
     return p
 
 
@@ -1100,7 +1154,8 @@ def sam_outfit():
 
 PIECES = [enclosure, easel, signboard, tree_round, tree_acacia, bush, rock, grass_tuft, lamp_post, bench,
           hedge, hedge_post, gate, hill, leaderboard, plaza, showcase, island, tree_palm, bush_flower, flowers, trader_stall, sam_hat, sam_outfit, race_grounds,
-          race_track, race_start, race_log, race_hay, race_rocks, race_mud, boost_ring, race_pad]
+          race_track, race_start, race_log, race_hay, race_rocks, race_mud, boost_ring, race_pad,
+          map_ground, border_fence]
 SPACING = 400.0
 
 

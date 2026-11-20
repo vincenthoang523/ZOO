@@ -33,6 +33,10 @@ def place(name, x, y, z, yaw_deg, scale=1.0):
 missing = set()
 for name, x, y, z, yaw, s in json.load(open(os.path.join(D, "export", "zoo_layout.json"))):
     base = re.sub(r"\d+$", "", name)
+    if base == "Hill":                                   # same fit as Studio: footprint inside the 400-stud ground
+        size = 100 * s                                   # hill() is a radius-50 dome
+        k = min(1.0, 150 / size); s *= k; size *= k
+        r = math.hypot(x, z); f = min(1.0, (395 - size / 2) / r); x, z = x * f, z * f
     if not place(base, x, -z, y, yaw, s): missing.add(base)
 place("RaceTrack", 0, 0, 0, 0)
 sa = math.radians(L.START_A)
@@ -42,14 +46,8 @@ for a, l in L.RINGS:
 for n, a, l in L.OBSTACLES:
     x, y = L.spot(a, l); place(n, x, y, -0.85, a + (90 if n == "RaceMud" else 0))
 place("RacePad", L.PAD[0], -L.PAD[1], 0, L.PAD[2])
-# plain round the island (Studio's Horizon part) so the outskirts don't float in sky
-bpy.ops.mesh.primitive_plane_add(size=1400, location=(0, 0, -3.5))
-plain = bpy.context.active_object
-for c in plain.users_collection: c.objects.unlink(plain)
-coll.objects.link(plain)
-pm = bpy.data.materials.new("PreviewPlain"); pm.use_nodes = True
-pm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.42, 0.68, 0.33, 1)
-plain.data.materials.append(pm)
+place("MapGround", 0, 0, 0, 0)
+place("BorderFence", 0, 0, 0, 0)
 
 for eng in ('BLENDER_EEVEE', 'BLENDER_EEVEE_NEXT'):
     try:
@@ -82,7 +80,10 @@ def along(a, lat, h):
     x, y = L.spot(a, lat); return (x, y, h)
 
 
-shot("1_overview", (0, -40, 560), (0, 0, 0), 26)
+shot("1_overview", (0, -40, 1300), (0, 0, 0), 30)
+shot("6_island_edge", (520, -520, 220), (0, 0, -20), 30)
+rx, ry = L.spot(L.RINGS[0][0], L.RINGS[0][1])
+shot("8_ring", (rx - 12, ry - 2, 4), (rx, ry, 3), 30)
 gx, gy = L.spot(L.START_A, 0)
 shot("2_start_gate", (gx + 70, gy + 65, 38), (gx - 8, gy - 4, 0), 28)
 shot("3_racer_view", along(100, -2, 7), along(118, -2, 3), 24)

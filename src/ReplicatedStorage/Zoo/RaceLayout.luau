@@ -16,6 +16,9 @@ L.OBSTACLES = { { "RaceLog", 125, 6 }, { "RaceHay", 152, -8 }, { "RaceMud", 160,
 	{ "RaceHay", 10, 2 }, { "RaceRocks", 40, -9 }, { "RaceLog", 66, -5 } }
 L.PAD = { x = 30, z = -100, yaw = 90 } -- sign-up pad inside the gate, board on its east side
 L.MUD_RX, L.MUD_RZ = 3.6, 5.0 -- mud ellipse half sizes: across the track, along it
+L.BORDER_R = 176 -- border fence round the loop (border_fence() in build_zoo_kit.py)
+-- walking out through the gate (this box, in world space) asks the player if they want to join the next race
+L.GATE_ZONE = { centre = Vector3.new(0, 2, -133), size = Vector3.new(22, 10, 8) }
 
 -- gravel edges (inner, outer radius) at an angle; must match track_edges() in build_zoo_kit.py
 function L.edges(aDeg: number): (number, number)

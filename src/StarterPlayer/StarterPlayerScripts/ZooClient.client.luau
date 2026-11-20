@@ -1723,14 +1723,18 @@ do
 		for _, a in state.animals do if a.id == id then return a end end
 		return nil
 	end
-	refreshers.Race = function()
-		for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
+	local function ensureSelected()
 		if selected and not find(selected) then selected = nil end
 		if not selected then -- default: the best earner, it looks the part
 			local best
 			for _, a in state.animals do if not best or Config.income(a) > Config.income(best) then best = a end end
 			selected = best and best.id
 		end
+		return selected and find(selected)
+	end
+	refreshers.Race = function()
+		for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
+		ensureSelected()
 		for i, a in state.animals do
 			local b = cellButton(list, nil, RARITY_PAL[a.r], function()
 				selected = a.id
@@ -1765,6 +1769,47 @@ do
 			or race.phase == "countdown" and "A race is starting!"
 			or string.format('Queue <font color="#FFE600">%d/%d</font>   ·   starts with %d racer%s', n, race.max, race.min, race.min == 1 and "" or "s")
 	end
+
+	-- walking out through the gate asks once: join the next race on your racer? (CHANGE opens the full picker)
+	local RL = require(Zoo:WaitForChild("RaceLayout"))
+	local ask = window("RaceAsk", "Race Time!", "rocket", 620, 400)
+	label(ask, "Would you like to join the next race?", 30, { Position = O(0, 4), Size = O(580, 40) })
+	local askThumb = new("Frame", { BackgroundTransparency = 1, Position = O(20, 64), Size = O(200, 140) }, ask)
+	local askName = label(ask, "", 28, { Position = O(240, 76), Size = O(330, 36), TextXAlignment = LEFT }, true)
+	local askInfo = label(ask, "", 20, { Position = O(240, 116), Size = O(330, 50), TextXAlignment = LEFT, TextWrapped = true, TextColor3 = hex("BFD3FF") })
+	local change = button(ask, "CHANGE", P.blue, O(150, 46), O(315, 190), function() open("Race") end, { text = 22 })
+	local yes = button(ask, "YES, RACE!", P.lime, O(250, 72), O(150, 284), function()
+		if selected then Remotes.RaceJoin:FireServer(selected) end
+		close("RaceAsk")
+	end, { text = 30 })
+	button(ask, "NO THANKS", P.red, O(220, 64), O(430, 284), function() close("RaceAsk") end, { text = 26 })
+	refreshers.RaceAsk = function()
+		local a = ensureSelected()
+		askThumb:ClearAllChildren()
+		if a then Render.draw(display(askThumb, O(200, 140), O(0, 0), 12), a.d, true, 3) end
+		askName.Text = a and a.d.n or "No animals yet!"
+		local n = #race.queue
+		askInfo.Text = not a and "Draw an animal at any easel to race on it." or race.phase == "racing" and "A race is on: you'll be in the next one."
+			or n > 0 and string.format("%d already waiting. Two laps, boost rings, prizes!", n) or "Two laps round the zoo. Win a spin of the prize wheel!"
+		yes.Visible, change.Visible = a ~= nil, a ~= nil
+	end
+	task.spawn(function()
+		local half, centre = RL.GATE_ZONE.size / 2, RL.GATE_ZONE.centre
+		local inside, lastAsk = false, -100
+		while true do
+			task.wait(0.2)
+			local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+			local d = hrp and hrp.Position - centre
+			local now = d ~= nil and math.abs(d.X) < half.X and math.abs(d.Y) < half.Y and math.abs(d.Z) < half.Z
+			-- only on the way out (heading away from the park, -Z), and not again for a while if they said no
+			if now and not inside and hrp.AssemblyLinearVelocity.Z < -2 and not current and os.clock() - lastAsk > 20
+				and not mine(race.queue) and not mine(race.racers) then
+				lastAsk = os.clock()
+				open("RaceAsk")
+			end
+			inside = now
+		end
+	end)
 
 	-- race HUD: place and lap pill at the top, big pop-up words in the middle (countdown, GO!, BOOST!, your place)
 	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(440, 66), BackgroundTransparency = 1, Visible = false }, gui))
@@ -1879,7 +1924,7 @@ do
 	end
 	local function addRing(m)
 		if rings[m] then return end
-		local centre = m:GetPivot() * CFrame.new(0, 5, 0)
+		local centre = m:GetPivot() * CFrame.new(0, 5.1, 0) -- the hoop's centre (boost_ring(): R + r/2)
 		local parts = {}
 		for _, k in { "boost", "boostLight" } do
 			local p = m:WaitForChild(k, 5)

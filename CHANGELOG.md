@@ -4,6 +4,14 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-20
 
+- **Race polish** (place v77, `ZooKit_Race_v2`):
+  - **Thinner rings:** the boost rings are a thin hoop that rests on the gravel. The stone block under each one is gone.
+  - **Border:** a rail fence runs round the outside of the race loop, with a tall invisible wall in it, so players can't walk off into the scenery.
+  - **Baseplate:** the 2048-stud Horizon slab is replaced by a round island ground just past the foliage, with a grass lip and an earthy underside. A cylinder underneath it (`Colliders.GroundCollider`) does the collision. The old slab is in `OldEnclosures`. The two largest hills were shrunk to 80%, and every hill was pulled in so it sits on the new ground.
+  - **Foliage:** the empty south sector, where the old race grounds were, is filled with 150 more trees, bushes, flowers, tufts and rocks. All 1,438 props were lowered onto the ground; a raycast check finds none floating.
+  - **Gate:** the swung-open doors now block players (`Colliders.GateDoor`).
+  - **Join from the gate:** walking out through the gate asks "Would you like to join the next race?". It shows your racer (CHANGE opens the picker) and has YES / NO THANKS. It only asks on the way out, and not again for 20 seconds.
+  - **Fixed:** the earth rim between the hedge and the gravel, and the track's outer shoulder, had no collision. Players dropped into a ditch there that racers couldn't jump out of. Invisible rim boxes and shoulder ramps now cover both.
 - **Game passes and products are live:** VIP (199), 2x Money (399) and 2x Luck (299) passes, and the Luck Boost (49), Starter Pack (99) and Double Offline Cash (25) products, each with its own icon (`blender/make_pass_icons.py`). Their ids are in `Config.PASSES` and `Config.PRODUCTS` (place v74).
 - **Old race grounds scrapped, gate opened:** the strip of land south of the gate is gone (kept in `ServerStorage.OldEnclosures.RaceGrounds_v1`). The gate's doors now stand swung open into the park.
 - **Animal races:** a gravel loop runs round the outside of the hedge (`ZooKit_Race`, built by `race_track()` and friends in `blender/build_zoo_kit.py`, laid out by `ServerStorage.RaceBuilder` from `ReplicatedStorage.Zoo.RaceLayout`).
