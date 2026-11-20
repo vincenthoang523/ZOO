@@ -18,7 +18,9 @@ PAL = dict(grass="7CC86E", grassDark="5FB35A", leaf="46A050", leafLight="6FCB5F"
            plank="D6A161", plankAlt="C38E55", ink="26262B", zebra="F7F3EA", rope="C9A46A", hay="F2C94C",
            khaki="DEC696", khakiDark="B89B62", olive="6E7A3E", oliveDark="4F5A2B", brass="E0B040", glass="9ED8F0",
            screen="1E2840", blue="4AA3F0", dirt="D9A066", gold="F2B233", bulb="FFF1C2",
-           cliff="E6E1D3", cliffDark="C9C2B2", moss="7CC86E", waterDeep="4FB2E3", foam="EAF8FF", ripple="EAF8FF")
+           cliff="E6E1D3", cliffDark="C9C2B2", moss="7CC86E", waterDeep="4FB2E3", foam="EAF8FF", ripple="EAF8FF",
+           gravel="BDB19C", gravelDark="AEA18B", pebble="8E8474", pebbleLight="DDD5C4", mud="7A5235", mudWet="5A3A24",
+           boost="3FD8FF", boostLight="E8FBFF")
 I = Matrix.Identity(4)
 
 
@@ -40,10 +42,12 @@ def rrect(w, d, r, n=3):
 
 
 def mat(color):
-    m = bpy.data.materials.get("Zoo_" + color)
-    if m: return m
-    m = bpy.data.materials.new("Zoo_" + color)
     h = PAL[color]
+    m = bpy.data.materials.get("Zoo_" + color)
+    if m:   # keep it in step with PAL, so a retuned colour shows up in renders saved with the .blend
+        m.node_tree.nodes.get("Principled BSDF").inputs["Base Color"].default_value = (*[((int(h[i:i + 2], 16) / 255) ** 2.2) for i in (0, 2, 4)], 1)
+        return m
+    m = bpy.data.materials.new("Zoo_" + color)
     lin = [((int(h[i:i + 2], 16) / 255) ** 2.2) for i in (0, 2, 4)]
     m.use_nodes = True
     b = m.node_tree.nodes.get("Principled BSDF")
@@ -645,8 +649,9 @@ def gate():
     p.extrude("wood", arc, 1.6)
     for sy in (-1, 1): p.box("cream", (17, 0.4, 2.8), T(0, sy * 0.85, 16.1))
     for sx in (-1, 1):
-        for k in range(4): p.box("wood", (1.3, 0.5, 9.4 - (k % 2) * 0.8), T(sx * (1.0 + k * 2.0), 0, 4.9 - (k % 2) * 0.4))
-        for z in (2.6, 7.4): p.box("wood", (8.0, 0.7, 0.6), T(sx * 4.2, 0, z))
+        H = T(sx * 8.2, 0, 0) @ Rz(-sx * 90) @ T(-sx * 8.2, 0, 0)      # door half swung open 90 degrees about its pillar hinge, into the park (+y once placed)
+        for k in range(4): p.box("wood", (1.3, 0.5, 9.4 - (k % 2) * 0.8), H @ T(sx * (1.0 + k * 2.0), 0, 4.9 - (k % 2) * 0.4))
+        for z in (2.6, 7.4): p.box("wood", (8.0, 0.7, 0.6), H @ T(sx * 4.2, 0, z))
     return p
 
 
@@ -774,6 +779,170 @@ def race_grounds():
         x = -60 + k * 20
         p.lathe("iron", [(0.18, 0), (0.18, 9), (0, 9.2)], 6, T(x, Y + 22, 0))
         p.extrude("red" if k % 2 == 0 else "yellow", [(0, 8.9), (2.6, 8.1), (0, 7.3)], 0.12, T(x, Y + 22, 0))
+    return p
+
+
+# ----------------------------------------------------------------- animal race (outskirts loop)
+TRACK_TOP = -0.85                     # gravel surface height (Roblox Y); the island's flat earth is at -1.0
+TRACK_R0, TRACK_R1 = 137.0, 163.0     # inner and outer edge radius before the wobble; centre line 150
+
+
+def track_edges(a):
+    """Inner and outer gravel edge radius at angle a (radians, Blender XY). Studio's race script uses the same formula."""
+    return (TRACK_R0 + 0.9 * math.sin(7 * a + 1.0) + 0.6 * math.sin(13 * a),
+            TRACK_R1 + 1.0 * math.sin(5 * a + 2.0) + 0.7 * math.sin(11 * a + 0.5))
+
+
+def _raw(p, color, verts, faces):
+    """Add an open surface without recalculating normals (faces are already wound counter-clockwise from outside)."""
+    bm = bmesh.new()
+    vs = [bm.verts.new(v) for v in verts]
+    for f in faces: bm.faces.new([vs[i] for i in f])
+    bmesh.ops.delete(bm, geom=[v for v in vs if not v.link_faces], context='VERTS')   # glTF drops loose verts; keep stats in step
+    me = bpy.data.meshes.new("tmp"); bm.to_mesh(me); bm.free()
+    p.parts.setdefault(color, bmesh.new()).from_mesh(me); bpy.data.meshes.remove(me)
+
+
+def race_track():
+    """Gravel loop round the outside of the hedge, origin = zoo centre at ground level. A flat gravel band blotched in two
+    tones, sprinkled with pebbles and edged with low stones, with a lip tucked under the island's earth on the inside and
+    an earth shoulder running down to the plain on the outside, so nothing hangs in the air. Studio builds the collision
+    (a ring of boxes); this mesh is visual only."""
+    p = Piece("RaceTrack", bevel=0.0, flat=("gravel", "gravelDark", "earth", "pebble", "pebbleLight", "rock"))
+    N, ROWS = 480, 12                                     # ~2-stud faces, so the tone blotches read as patches, not tiles
+    verts, rings = [], []
+    for i in range(N):
+        a = 2 * math.pi * i / N
+        r0, r1 = track_edges(a)
+        prof = [(r0 - 1.6, TRACK_TOP - 0.35)] + [(r0 + (r1 - r0) * k / ROWS, TRACK_TOP) for k in range(ROWS + 1)] + \
+               [(r1 + 2.4, TRACK_TOP - 0.9), (r1 + 8.5, -3.75)]
+        rings.append([len(verts) + k for k in range(len(prof))])
+        verts += [(r * math.cos(a), r * math.sin(a), z) for r, z in prof]
+    M = len(rings[0])
+    faces = {"gravel": [], "gravelDark": [], "earth": []}
+    for i in range(N):
+        A, B = rings[i], rings[(i + 1) % N]
+        for k in range(M - 1):
+            f = (A[k], A[k + 1], B[k + 1], B[k])          # outward then forward in angle: counter-clockwise seen from above
+            c = "gravelDark" if k == 0 else "earth" if k >= ROWS + 1 else "gravel"   # one even tone: face blotches read as tiles; pebbles give the grain
+            faces[c].append(f)
+    for c, fs in faces.items(): _raw(p, c, verts, fs)
+    rnd = random.Random(42)
+    for k in range(1300):                                    # pebbles: flat chips pressed into the surface
+        a = rnd.uniform(0, 2 * math.pi)
+        r0, r1 = track_edges(a)
+        r = rnd.uniform(r0 + 0.6, r1 - 0.6)
+        p.ico("pebbleLight" if k % 3 == 0 else "pebble", rnd.uniform(0.22, 0.55), 0,
+              T(r * math.cos(a), r * math.sin(a), TRACK_TOP + 0.02) @ Rz(rnd.uniform(0, 360)) @ S(1.3, 1.0, 0.38), 0.2, k)
+    for edge in (0, 1):                                      # low edging stones, sunk half into the gravel
+        n = 150 if edge == 0 else 175
+        for k in range(n):
+            a = 2 * math.pi * (k + rnd.uniform(-0.3, 0.3)) / n
+            r = track_edges(a)[edge] + (rnd.uniform(-0.3, 0.2) if edge == 0 else rnd.uniform(-0.2, 0.4))
+            p.ico("rock", rnd.uniform(0.7, 1.25), 0,
+                  T(r * math.cos(a), r * math.sin(a), TRACK_TOP - 0.1) @ Rz(rnd.uniform(0, 360)) @ S(1.35, 1.0, 0.6), 0.22, 1000 + k + edge * 500)
+    return p
+
+
+def race_start():
+    """Start/finish arch across the track. Origin = centre line on the gravel; x runs across the track (+x outward),
+    the track runs along y. Posts stand off both edges and reach down past the shoulder; a chequered strip on the gravel."""
+    p = Piece("RaceStart", bevel=0.15, flat=("ink", "zebra"), bevels={"red": 0.1})
+    for sx, foot in ((-1, -0.6), (1, -2.9)):
+        x = sx * 15.6
+        p.lathe("stone", [(1.3, foot), (1.3, 0.5), (0.95, 0.9), (0.95, 1.2), (0, 1.2)], 8, T(x, 0, 0))
+        p.lathe("wood", [(0.75, foot), (0.75, 11.6), (0, 11.6)], 8, T(x, 0, 0))
+        p.lathe("yellow", [(0, 12.0), (0.75, 12.3), (1.05, 13.0), (0.75, 13.7), (0, 14.0)], 8, T(x, 0, 0))
+    p.box("wood", (33.4, 1.3, 1.3), T(0, 0, 11.6))
+    p.box("red", (20.0, 0.5, 3.4), T(0, 0, 9.4))                       # banner: Studio writes START / FINISH on both faces
+    for sx in (-1, 1): p.box("rope", (0.25, 0.25, 0.9), T(sx * 8.6, 0, 11.0))
+    n = 16
+    for i in range(n):
+        for j in range(2):
+            p.box("ink" if (i + j) % 2 == 0 else "zebra", (25.0 / n, 1.0, 0.06), T(-12.5 + (i + 0.5) * 25.0 / n, (j - 0.5) * 1.0, 0.03))
+    return p
+
+
+def race_log():
+    """Fallen log lying along x: bark body, pale cut ends with a ring, a snapped branch and a moss cap."""
+    p = Piece("RaceLog", bevel=0.12, bevels={"plank": 0.05})
+    L, R = 9.0, 1.15
+    p.tube("woodDark", [(-L / 2, 0, R * 0.92), (-L / 6, 0.1, R * 0.95), (L / 6, -0.1, R * 0.93), (L / 2, 0, R * 0.9)], [R, R * 1.03, R * 0.98, R * 0.95], 8)
+    for sx, rr in ((-1, R * 0.9), (1, R * 0.85)):
+        M = T(sx * (L / 2 - 0.05), 0, R * 0.92) @ Ry(90 * sx)
+        p.lathe("plank", [(rr, 0), (rr, 0.18), (0, 0.18)], 8, M)
+        p.lathe("wood", [(rr * 0.5, 0.17), (rr * 0.62, 0.17), (rr * 0.62, 0.22), (rr * 0.5, 0.22)], 8, M, closed=True)
+    p.limb("woodDark", (0.8, 0.3, R * 1.5), (1.9, 1.5, R * 2.4), 0.38, 0.22, 6)
+    p.blob(0.9, 1, T(-1.6, 0, R * 1.75) @ S(1.6, 0.9, 0.45), lobes=4, amp=0.2, seed=5)
+    return p
+
+
+def race_hay():
+    """Hay bale stack: two bales side by side, one on top, each with two rope straps."""
+    p = Piece("RaceHay", bevel=0.3, bevels={"rope": 0.05})
+    for x, z in ((-1.3, 1.1), (1.3, 1.1), (0.0, 3.3)):
+        p.box("hay", (2.5, 4.0, 2.2), T(x, 0, z))
+        for y in (-1.1, 1.1): p.box("rope", (2.62, 0.22, 2.32), T(x, y, z))
+    return p
+
+
+def race_rocks():
+    """Low boulder cluster, pushed into each other and into the ground."""
+    p = Piece("RaceRocks", bevel=0.0, flat=("rock", "stone"))
+    p.ico("rock", 2.0, 1, T(0, 0, 0.9) @ S(1.3, 1.0, 0.85), 0.16, 21)
+    p.ico("stone", 1.4, 1, T(2.1, 0.7, 0.55) @ S(1.1, 1.0, 0.8), 0.16, 22)
+    p.ico("rock", 1.1, 1, T(-2.0, -0.6, 0.4) @ S(1.2, 1.0, 0.75), 0.16, 23)
+    return p
+
+
+def race_mud():
+    """Mud patch, flush with the gravel: a wobbly brown pool with a darker wet middle and two splats beside it."""
+    p = Piece("RaceMud", bevel=0.0, flat=("mud", "mudWet"))
+    def outline(rx, ry, n, seed):
+        rnd = random.Random(seed)
+        return [((rx + rnd.uniform(-0.6, 0.6)) * math.cos(2 * math.pi * i / n), (ry + rnd.uniform(-0.5, 0.5)) * math.sin(2 * math.pi * i / n)) for i in range(n)]
+    p.extrude("mud", outline(5.0, 3.6, 18, 31), 0.1, T(0, 0, -0.02), 'XY')
+    p.extrude("mudWet", outline(3.2, 2.1, 14, 32), 0.1, T(0.3, 0.2, 0.0), 'XY')
+    for x, y, r in ((5.6, 2.6, 0.9), (-5.2, -2.4, 0.7)):
+        p.extrude("mud", outline(r, r * 0.8, 9, int(abs(x) * 10)), 0.1, T(x, y, -0.02), 'XY')
+    return p
+
+
+def boost_ring():
+    """Speed-boost hoop standing on the gravel: a candy-striped torus (axis along y, the running direction) on a stone foot."""
+    p = Piece("BoostRing", bevel=0.0, flat=("stone",))
+    R, r, SEG, SIDE, BANDS = 5.0, 0.55, 48, 8, 12
+    for band in range(BANDS):
+        verts, faces = [], []
+        i0, i1 = band * SEG // BANDS, (band + 1) * SEG // BANDS
+        for i in range(i0, i1 + 1):
+            u = 2 * math.pi * i / SEG
+            for j in range(SIDE):
+                v = 2 * math.pi * j / SIDE
+                d = R + r * math.cos(v)
+                verts.append((d * math.cos(u), r * math.sin(v), 5.0 + d * math.sin(u)))
+        for i in range(i1 - i0):
+            for j in range(SIDE):
+                a, b = i * SIDE + j, i * SIDE + (j + 1) % SIDE
+                faces.append((a, b, b + SIDE, a + SIDE))
+        faces.append(tuple(range(SIDE))); faces.append(tuple(range((i1 - i0) * SIDE, (i1 - i0 + 1) * SIDE)))
+        p.mesh("boost" if band % 2 == 0 else "boostLight", verts, faces)
+    p.box("stone", (2.6, 1.6, 0.7), T(0, 0, 0.1))
+    return p
+
+
+def race_pad():
+    """Race sign-up pad inside the gate: a round stone step with a glowing inset ring and a signboard behind it
+    (Studio writes ANIMAL RACES on the board). Origin = pad centre on the ground; the board stands at -y."""
+    p = Piece("RacePad", bevel=0.15, bevels={"glow": 0.05})
+    p.lathe("stone", [(6.2, 0), (6.2, 0.45), (5.8, 0.7), (0, 0.7)], 24)
+    p.lathe("glow", [(4.6, 0.66), (5.2, 0.66), (5.2, 0.8), (4.6, 0.8)], 24, closed=True)
+    p.lathe("red", [(3.8, 0.66), (3.8, 0.76), (0, 0.76)], 24)
+    for sx in (-1, 1):
+        p.lathe("wood", [(0.45, 0), (0.45, 8.2), (0, 8.2)], 8, T(sx * 4.4, -7.4, 0))
+        p.lathe("yellow", [(0, 8.1), (0.5, 8.4), (0.7, 8.9), (0.5, 9.4), (0, 9.6)], 8, T(sx * 4.4, -7.4, 0))
+    p.box("wood", (10.0, 0.6, 3.6), T(0, -7.4, 6.0))
+    p.box("cream", (9.0, 0.7, 2.8), T(0, -7.4, 6.0))                    # board face: Studio puts the text on its +y side
     return p
 
 
@@ -930,7 +1099,8 @@ def sam_outfit():
 
 
 PIECES = [enclosure, easel, signboard, tree_round, tree_acacia, bush, rock, grass_tuft, lamp_post, bench,
-          hedge, hedge_post, gate, hill, leaderboard, plaza, showcase, island, tree_palm, bush_flower, flowers, trader_stall, sam_hat, sam_outfit, race_grounds]
+          hedge, hedge_post, gate, hill, leaderboard, plaza, showcase, island, tree_palm, bush_flower, flowers, trader_stall, sam_hat, sam_outfit, race_grounds,
+          race_track, race_start, race_log, race_hay, race_rocks, race_mud, boost_ring, race_pad]
 SPACING = 400.0
 
 
@@ -1000,7 +1170,7 @@ def run(render=True, only=None, name="ZooKit"):
     else:
         scene = bpy.data.scenes.new("ZooKit")
     scene.unit_settings.system = 'NONE'
-    bpy.context.window.scene = scene
+    if bpy.context.window: bpy.context.window.scene = scene   # no window when run with blender --background
     coll = scene.collection
     os.makedirs(os.path.join(OUT, "export"), exist_ok=True)
     os.makedirs(os.path.join(OUT, "renders"), exist_ok=True)

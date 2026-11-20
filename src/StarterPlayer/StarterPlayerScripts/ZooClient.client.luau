@@ -481,7 +481,7 @@ for _, a in { "Cash", "Rate", "Luck" } do player:GetAttributeChangedSignal(a):Co
 refreshCash()
 
 ProximityPromptService.PromptTriggered:Connect(function(prompt)
-	if prompt.Name == "DrawPrompt" then open("Editor") elseif prompt.Name == "UpgradePrompt" then open("Upgrades") elseif prompt.Name == "SellPrompt" then open("Sell") end
+	if prompt.Name == "DrawPrompt" then open("Editor") elseif prompt.Name == "UpgradePrompt" then open("Upgrades") elseif prompt.Name == "SellPrompt" then open("Sell") elseif prompt.Name == "RacePrompt" then open("Race") end
 end)
 
 ----- Odds -----
@@ -1683,6 +1683,231 @@ do
 	end
 	board:GetAttributeChangedSignal("Top"):Connect(refresh)
 	refresh()
+end
+
+----- Animal race: pick an animal at the pad inside the gate, ride its cutout round the outskirts, the winner spins the prize wheel -----
+do
+	local R = Config.RACE
+	local race = { phase = "idle", ends = 0, queue = {}, racers = {}, min = R.MIN_PLAYERS, max = R.MAX_PLAYERS, laps = R.LAPS }
+	local function mine(list) return table.find(list, player.UserId) ~= nil end
+	local function ordinal(n)
+		local s = (n % 100 >= 11 and n % 100 <= 13) and "th" or ({ "st", "nd", "rd" })[n % 10] or "th"
+		return n .. s
+	end
+
+	-- the window: your animals on the left, the one you'll ride and the queue on the right
+	local body = window("Race", "Animal Race", "rocket", 900, 600)
+	local info = label(body, "", 24, { Size = O(860, 30), TextXAlignment = LEFT })
+	label(body, "Two laps round the zoo. Everyone runs at the same speed: fly through the boost rings to win!", 18,
+		{ Position = O(0, 34), Size = O(860, 24), TextXAlignment = LEFT, TextColor3 = hex("BFD3FF") })
+	local list = new("ScrollingFrame", { Position = O(0, 70), Size = O(598, 456), BackgroundTransparency = 1, ScrollBarThickness = 8, ScrollBarImageColor3 = hex("9A9A9A"),
+		TopImage = "", BottomImage = "", BorderSizePixel = 0, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = U() }, body)
+	new("UIGridLayout", { CellSize = O(138, 150), CellPadding = O(8, 10), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+	new("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingLeft = UDim.new(0, 4), PaddingBottom = UDim.new(0, 10) }, list)
+	local empty = new("Frame", { BackgroundTransparency = 1, Position = O(0, 160), Size = O(598, 200), Visible = false }, body)
+	label(empty, "Draw an animal to race on!", 32, { Position = O(0, 20), Size = O(598, 44) })
+	button(empty, "DRAW ONE", P.gold, O(240, 70), O(299, 120), function() open("Editor") end, { icon = "pencil", iconSize = 50, text = 30 })
+
+	local _, pface = card(body, P.purple, O(250, 456), O(610, 70), 16)
+	label(pface, "YOUR RACER", 22, { Position = O(0, 8), Size = O(250, 28) })
+	local thumb = new("Frame", { BackgroundTransparency = 1, Position = O(15, 42), Size = O(220, 154) }, pface)
+	local pName = label(pface, "", 28, { Position = O(0, 202), Size = O(250, 36) }, true)
+	local status = label(pface, "", 20, { Position = O(10, 244), Size = O(230, 70), TextWrapped = true })
+	local selected
+	local joinBtn = button(pface, "JOIN RACE", P.lime, O(220, 66), O(125, 350), function()
+		if selected then Remotes.RaceJoin:FireServer(selected) end
+	end, { text = 30 })
+	local leaveBtn = button(pface, "LEAVE QUEUE", P.red, O(220, 52), O(125, 414), function() Remotes.RaceLeave:FireServer() end, { text = 22 })
+
+	local function find(id)
+		for _, a in state.animals do if a.id == id then return a end end
+		return nil
+	end
+	refreshers.Race = function()
+		for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
+		if selected and not find(selected) then selected = nil end
+		if not selected then -- default: the best earner, it looks the part
+			local best
+			for _, a in state.animals do if not best or Config.income(a) > Config.income(best) then best = a end end
+			selected = best and best.id
+		end
+		for i, a in state.animals do
+			local b = cellButton(list, nil, RARITY_PAL[a.r], function()
+				selected = a.id
+				refreshers.Race()
+			end, { lip = 5 }, -a.r * 100 + i)
+			Render.draw(display(b.Face, O(120, 84), O(9, 8)), a.d, true, 3)
+			label(b.Face, a.d.n, 20, { Position = O(0, 96), Size = O(138, 24) })
+			label(b.Face, Config.RARITIES[a.r].name:upper(), 16, { Position = O(0, 120), Size = O(138, 20), TextColor3 = C.yellow })
+			if a.id == selected then
+				b.Outline.Color = C.yellow
+				b.Outline.Thickness = 6
+			end
+		end
+		empty.Visible = #state.animals == 0
+		local a = selected and find(selected)
+		thumb:ClearAllChildren()
+		if a then Render.draw(display(thumb, O(220, 154), O(0, 0), 12), a.d, true, 3) end
+		pName.Text = a and a.d.n or "-"
+		local inQueue, racing = mine(race.queue), mine(race.racers)
+		joinBtn.Visible = not inQueue and not racing and a ~= nil
+		leaveBtn.Visible = inQueue or racing
+		setLabel(leaveBtn, racing and "QUIT RACE" or "LEAVE QUEUE")
+		local n = #race.queue
+		if racing then
+			status.Text = "You're racing!"
+		elseif inQueue then
+			status.Text = race.phase == "racing" and "Queued for the next race" or string.format("In the queue: %d/%d\nNeeds %d to start", n, race.max, race.min)
+		else
+			status.Text = n > 0 and string.format("%d waiting to race", n) or "Pick an animal and join!"
+		end
+		info.Text = race.phase == "racing" and string.format('Race on! <font color="#FFE600">%d</font> racing right now', #race.racers)
+			or race.phase == "countdown" and "A race is starting!"
+			or string.format('Queue <font color="#FFE600">%d/%d</font>   ·   starts with %d racer%s', n, race.max, race.min, race.min == 1 and "" or "s")
+	end
+
+	-- race HUD: place and lap pill at the top, big pop-up words in the middle (countdown, GO!, BOOST!, your place)
+	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(440, 66), BackgroundTransparency = 1, Visible = false }, gui))
+	local pill = round(new("Frame", { Size = S(1, 1), BackgroundColor3 = WHITE }, hudR), 18)
+	grad(pill, P.purple)
+	ink(pill, 4)
+	local placeL = label(pill, "", 36, { Position = O(18, 6), Size = O(200, 50), TextXAlignment = LEFT }, true)
+	goldText(placeL)
+	local lapL = label(pill, "", 30, { Position = O(220, 8), Size = O(200, 46), TextXAlignment = RIGHT }, true)
+	local big = scaled(new("Frame", { Name = "RacePop", AnchorPoint = CENTER, Position = S(0.5, 0.36), Size = O(800, 190), BackgroundTransparency = 1, Visible = false, ZIndex = 30 }, gui))
+	local bigScale = new("UIScale", { Name = "Pop" }, big)
+	local bigL = label(big, "", 130, { Size = S(1, 1) }, true)
+	local popId = 0
+	local function pop(text, color, hold)
+		popId += 1
+		local id = popId
+		bigL.Text, bigL.TextColor3, big.Visible, bigScale.Scale = text, color or WHITE, true, 0.3
+		TweenService:Create(bigScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		task.delay(hold or 0.8, function() if popId == id then big.Visible = false end end)
+	end
+	local camera = workspace.CurrentCamera
+	local function zoom(seconds) -- speed kick: widen the view, then ease back over the boost
+		TweenService:Create(camera, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { FieldOfView = 84 }):Play()
+		task.delay(0.15, function() TweenService:Create(camera, TweenInfo.new(seconds, Enum.EasingStyle.Sine), { FieldOfView = 70 }):Play() end)
+	end
+
+	local shown
+	Remotes.RaceState.OnClientEvent:Connect(function(s)
+		local before = race.phase
+		race = s
+		local racing = mine(s.racers)
+		hudR.Visible = racing and s.phase == "racing"
+		if racing and current == "Race" then close("Race") end
+		if racing and s.phase == "racing" and before == "countdown" then pop("GO!", C.cash) end
+		if not racing then shown = nil end
+		if current == "Race" then refreshers.Race() end
+	end)
+	RunService.Heartbeat:Connect(function()
+		if race.phase ~= "countdown" or not mine(race.racers) then return end
+		local left = math.ceil(race.ends - workspace:GetServerTimeNow())
+		if left >= 1 and left ~= shown then
+			shown = left
+			pop(tostring(left), C.yellow, 0.9)
+		end
+	end)
+	Remotes.RaceInfo.OnClientEvent:Connect(function(i)
+		if i.place then
+			placeL.Text = ordinal(i.place) .. " / " .. i.count
+			lapL.Text = "LAP " .. i.lap .. "/" .. i.laps
+		end
+		if i.boost then
+			pop("BOOST!", hex("3DF5FF"), 0.6)
+			zoom(i.boost)
+		end
+		if i.mud then toast("Mud! Slowed down...", hex("D9A066")) end
+		if i.finished then
+			hudR.Visible = false
+			pop(ordinal(i.finished) .. " PLACE!", i.finished == 1 and C.yellow or WHITE, 2)
+		end
+	end)
+
+	-- prize wheel: five spokes on a dial, a pointer at the top. The server has already paid; this plays it back.
+	local wb = window("Wheel", "Prize Wheel", "star", 660, 600)
+	local n = #R.WHEEL
+	local dial = new("Frame", { AnchorPoint = CENTER, Position = O(310, 205), Size = O(370, 370), BackgroundColor3 = WHITE }, wb)
+	round(dial, 185)
+	ink(dial, 6)
+	grad(dial, P.blue)
+	for i, s in R.WHEEL do
+		local arm = new("Frame", { AnchorPoint = CENTER, Position = S(0.5, 0.5), Size = S(1, 1), BackgroundTransparency = 1, Rotation = (i - 1) * 360 / n }, dial)
+		local slab = round(new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 12), Size = O(96, 112), BackgroundColor3 = hex(s.color) }, arm), 16)
+		ink(slab, 4)
+		new("UIGradient", { Rotation = 90, Color = ColorSequence.new(WHITE, hex("BBBBBB")) }, slab)
+		label(slab, s.label, 20, { Position = O(4, 8), Size = U(1, -8, 0, 60), TextScaled = true })
+	end
+	local hub = round(new("Frame", { AnchorPoint = CENTER, Position = S(0.5, 0.5), Size = O(130, 130), BackgroundColor3 = WHITE }, dial), 65)
+	grad(hub, P.gold)
+	ink(hub, 5)
+	sticker(hub, "star", 80, S(0.5, 0.5))
+	local pointer = new("Frame", { AnchorPoint = CENTER, Position = O(310, 24), Size = O(40, 40), Rotation = 45, BackgroundColor3 = WHITE, ZIndex = 3 }, wb)
+	round(pointer, 6)
+	ink(pointer, 4)
+	grad(pointer, P.red)
+	local result = label(wb, "", 44, { Position = O(0, 396), Size = O(620, 54), TextColor3 = C.cash })
+	local collect = button(wb, "COLLECT", P.lime, O(240, 70), O(310, 486), function() close("Wheel") end, { text = 32 })
+	Remotes.RaceSpin.OnClientEvent:Connect(function(i, text)
+		result.Text, collect.Visible, dial.Rotation = "", false, 0
+		if current ~= "Wheel" then open("Wheel") end
+		local slice = 360 / n
+		local target = -(i - 1) * slice - 360 * 5 + (math.random() - 0.5) * slice * 0.6
+		local tw = TweenService:Create(dial, TweenInfo.new(4.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Rotation = target })
+		tw.Completed:Once(function()
+			result.Text, collect.Visible = text, true
+			pop("YOU WON!", C.yellow, 1.2)
+		end)
+		tw:Play()
+	end)
+
+	-- the cutouts racers ride (built by the server, drawn here), hopping while they run; boost rings turn slowly
+	local mounts, rings = {}, {}
+	local function addMount(part)
+		if mounts[part] then return end
+		local ok, design = pcall(HttpService.JSONDecode, HttpService, part:GetAttribute("Design") or "")
+		if not ok or typeof(design) ~= "table" then return end
+		mounts[part] = { seed = math.random() * 10 }
+		for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+			local sg = new("SurfaceGui", { Face = face, SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud, PixelsPerStud = 40, LightInfluence = 0.25, MaxDistance = 300, Adornee = part }, part)
+			Render.draw(sg, design, true, 2)
+		end
+		local weld = part:WaitForChild("MountWeld", 5)
+		if weld and mounts[part] then mounts[part].weld, mounts[part].base = weld, weld.C0 end
+	end
+	local function addRing(m)
+		if rings[m] then return end
+		local centre = m:GetPivot() * CFrame.new(0, 5, 0)
+		local parts = {}
+		for _, k in { "boost", "boostLight" } do
+			local p = m:WaitForChild(k, 5)
+			if p then parts[p] = centre:ToObjectSpace(p.CFrame) end
+		end
+		rings[m] = { centre = centre, parts = parts }
+	end
+	for tagName, fn in { RaceMount = addMount, BoostRing = addRing } do
+		CollectionService:GetInstanceAddedSignal(tagName):Connect(function(o) task.spawn(fn, o) end)
+		CollectionService:GetInstanceRemovedSignal(tagName):Connect(function(o) mounts[o], rings[o] = nil, nil end)
+		for _, o in CollectionService:GetTagged(tagName) do task.spawn(fn, o) end
+	end
+	RunService.RenderStepped:Connect(function()
+		local t = os.clock()
+		for part, m in mounts do
+			if not part.Parent then mounts[part] = nil continue end
+			local hrp = m.weld and m.weld.Part0
+			if hrp then
+				local moving = hrp.AssemblyLinearVelocity.Magnitude > 3
+				local s = math.sin(t * 9 + m.seed)
+				m.weld.C0 = m.base * CFrame.new(0, moving and math.abs(s) * 0.5 or 0, 0) * CFrame.Angles(0, 0, moving and s * 0.05 or 0)
+			end
+		end
+		local turn = CFrame.Angles(0, 0, t * 0.8)
+		for m, r in rings do
+			for p, rel in r.parts do p.CFrame = r.centre * turn * rel end
+		end
+	end)
 end
 
 ----- intro cinematic -----

@@ -2,6 +2,17 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-20
+
+- **Game passes and products are live:** VIP (199), 2x Money (399) and 2x Luck (299) passes, and the Luck Boost (49), Starter Pack (99) and Double Offline Cash (25) products, each with its own icon (`blender/make_pass_icons.py`). Their ids are in `Config.PASSES` and `Config.PRODUCTS` (place v74).
+- **Old race grounds scrapped, gate opened:** the strip of land south of the gate is gone (kept in `ServerStorage.OldEnclosures.RaceGrounds_v1`). The gate's doors now stand swung open into the park.
+- **Animal races:** a gravel loop runs round the outside of the hedge (`ZooKit_Race`, built by `race_track()` and friends in `blender/build_zoo_kit.py`, laid out by `ServerStorage.RaceBuilder` from `ReplicatedStorage.Zoo.RaceLayout`).
+  - Walk onto the pad inside the gate and press E, pick one of your animals and join the queue. When enough racers are queued (2, or 1 in Studio), everyone is put on the starting grid riding a hopping cutout of their animal, and a 5-second countdown runs.
+  - Two laps of the zoo. Everyone runs at the same speed (32). The 11 striped rings give a 2.5-second boost (58), mud patches slow you down (15), and logs, hay bales and rock piles block the way. Jumping is off while racing.
+  - The server tracks progress round the loop, so cutting through the park doesn't count. It also handles rings, mud, places and prizes. The HUD shows place and lap, the countdown, GO! and BOOST!.
+  - The winner spins the prize wheel: 10 or 30 minutes of income, a 1-hour jackpot, or 5 minutes of 2x Luck or 2x Money. 2x Money is a new boost (`moneyUntil` in the save). Every other finisher gets 2 minutes of income. Settings are in `Config.RACE`.
+  - Code: `ServerScriptService.ZooRace` (race), `ServerScriptService.ZooApi` (ZooServer's data for other server scripts), and the Race, race HUD and Prize Wheel sections in `ZooClient`.
+
 ## 2026-11-19
 
 - **Side menus, second pass:** the left and right menus are now mirrored columns at the same height, so their rows line up across the screen. All eight buttons are one smaller size (186 x 56, was up to 222 x 68 and 232 x 96), with a 12 px gap.

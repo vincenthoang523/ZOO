@@ -14,6 +14,7 @@ local Config = require(Zoo.Config)
 local Render = require(Zoo.Render)
 local Remotes = Zoo.Remotes
 local World = workspace:WaitForChild("Zoo")
+local Api = require(script.Parent.ZooApi) -- filled in at the bottom, for ZooRace
 
 -- shortcut: no session locking, a player in two servers at once could overwrite data; move to ProfileStore if trading is ever added
 local store = DataStoreService:GetDataStore("ZooV1")
@@ -21,7 +22,7 @@ local sessions = {} -- [Player] = { data, loaded, plot, passes, lastCreate, last
 local rng = Random.new()
 
 local function newData()
-	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false }
+	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, moneyUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false }
 end
 
 ----- maths -----
@@ -41,6 +42,7 @@ local function rate(s)
 	end
 	if s.passes.Money2x then r *= 2 end
 	if s.passes.VIP then r *= 1.2 end
+	if s.data.moneyUntil > os.time() then r *= 2 end -- race prize
 	return math.floor(r)
 end
 
@@ -61,7 +63,7 @@ local function sync(player, full)
 		Remotes.State:FireClient(player, {
 			luckLevel = s.data.luckLevel, capLevel = s.data.capLevel, capacity = capacity(s), animals = s.data.animals,
 			dailyDay = s.data.dailyDay, dailyWait = math.max(0, s.data.dailyAt + Config.DAILY_COOLDOWN - os.time()),
-			boostLeft = math.max(0, s.data.boostUntil - os.time()), passes = s.passes, freeClaimed = s.data.freeClaimed,
+			boostLeft = math.max(0, s.data.boostUntil - os.time()), moneyLeft = math.max(0, s.data.moneyUntil - os.time()), passes = s.passes, freeClaimed = s.data.freeClaimed,
 			offline = s.offlineNotice, -- sent once, for the Welcome Back popup
 		})
 		s.offlineNotice = nil
@@ -427,6 +429,36 @@ MarketplaceService.ProcessReceipt = function(receipt)
 	sync(player, true)
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
+
+----- API for the other server scripts (ZooRace); never exposed to clients -----
+function Api.session(player) return sessions[player] end
+function Api.findAnimal(player, id)
+	local s = sessions[player]
+	return s and findAnimal(s, id)
+end
+function Api.rate(player)
+	local s = sessions[player]
+	return s and rate(s) or 0
+end
+function Api.giveCash(player, amount)
+	local s = sessions[player]
+	if not s then return end
+	s.data.cash += math.floor(amount)
+	sync(player, true)
+end
+function Api.addLuck(player, minutes)
+	local s = sessions[player]
+	if not s then return end
+	addBoost(s, minutes)
+	sync(player, true)
+end
+function Api.addMoney(player, minutes)
+	local s = sessions[player]
+	if not s then return end
+	s.data.moneyUntil = math.max(s.data.moneyUntil, os.time()) + minutes * 60
+	sync(player, true)
+end
+Api.notify = notify
 
 ----- loops -----
 Players.PlayerAdded:Connect(onJoin)

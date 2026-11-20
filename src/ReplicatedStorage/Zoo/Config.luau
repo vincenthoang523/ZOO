@@ -68,9 +68,9 @@ Config.DAILY = {
 	{ cash = 15000 }, { luckMin = 15 }, { cash = 50000, luckMin = 30 },
 }
 
--- Paste the IDs from the Creator Dashboard here. 0 = not for sale yet ("Coming soon").
-Config.PASSES = { VIP = 0, Money2x = 0, Luck2x = 0 }
-Config.PRODUCTS = { LuckBoost = 0, StarterPack = 0, OfflineDouble = 0 }
+-- Game pass and developer product ids (created 2026-11-19, docs/ASSETS.md). 0 = not for sale yet ("Coming soon").
+Config.PASSES = { VIP = 2096448686, Money2x = 2094550605, Luck2x = 2093692759 }
+Config.PRODUCTS = { LuckBoost = 3733847302, StarterPack = 3733847308, OfflineDouble = 3733847314 }
 Config.GROUP_ID = 0 -- your Roblox group id: the Free Reward then also asks players to join it
 Config.FREE_LUCK_MINUTES = 30 -- one-time Free Reward
 Config.OFFLINE_HOURS = 3 -- most hours of income paid for time away
@@ -89,6 +89,23 @@ Config.ICONS = {
 	strawberry = "rbxassetid://84280958364881", cloud = "rbxassetid://70823404569278", rocket = "rbxassetid://130155476113713", skip = "rbxassetid://102098865538470",
 }
 Config.LUCK_BOOST_MINUTES = 5
+
+-- Animal races round the outskirts (ZooRace.server.luau, layout in RaceLayout). Everyone runs at the same speed;
+-- boost rings are how you win. The winner spins the prize wheel; every other finisher gets CONSOLATION_SECONDS of income.
+Config.RACE = {
+	LAPS = 2, MIN_PLAYERS = 2, MAX_PLAYERS = 8, COUNTDOWN = 5,
+	SPEED = 32, BOOST_SPEED = 58, BOOST_SECONDS = 2.5, MUD_SPEED = 15,
+	TIME_LIMIT = 150, AFTER_WINNER = 25, -- seconds: the whole race, and how long the rest get once someone has won
+	CONSOLATION_SECONDS = 120,
+	-- prize wheel slices, clockwise from the top. cash = seconds of the winner's income; luck/money = minutes of 2x
+	WHEEL = {
+		{ label = "10 MIN\nCASH", cash = 600, weight = 30, color = "6BFF3A" },
+		{ label = "2x LUCK\n5 MIN", luck = 5, weight = 24, color = "3DF5FF" },
+		{ label = "30 MIN\nCASH", cash = 1800, weight = 15, color = "FFB000" },
+		{ label = "2x MONEY\n5 MIN", money = 5, weight = 24, color = "FF2BD6" },
+		{ label = "JACKPOT\n1 HOUR", cash = 3600, weight = 7, color = "FFE600" },
+	},
+}
 Config.STARTER_PACK = { cash = 25000, luckMin = 30 }
 
 -- stickers are icon-pack images: each entry is a key of Config.ICONS (a saved sticker stores its index here)

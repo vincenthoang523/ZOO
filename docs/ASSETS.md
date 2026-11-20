@@ -16,6 +16,7 @@ Everything is uploaded to group `229775176`. Uploads are permanent, so a changed
 | 87748702725793 | ZooKit_Board_v2 (single-pole Top Earners board) | `blender/export/ZooKit_Board_v2.glb` |
 | 74251838140516 | ZooKit_EnclosurePalm_v3 (mesh enclosure with rock wall and waterfall, curved palm) | `blender/export/ZooKit_EnclosurePalm_v3.glb` |
 | 117771398757994 | ZooKit_Enclosure_v4 (rock behind the waterfall pool) | `blender/export/ZooKit_Enclosure_v4.glb` |
+| 85122827813192 | ZooKit_Race (gravel race loop, start arch, log, hay, rocks, mud, boost ring, sign-up pad, opened gate) | `blender/export/ZooKit_Race.glb` |
 
 In Studio, the imported pieces become templates in `ServerStorage.ZooKit`, and copies of them are placed in `workspace.Zoo.Art`.
 
@@ -50,3 +51,20 @@ To change an icon everywhere, swap its id in `Config.ICONS`.
 ## Not set yet
 
 `Config.PASSES` and `Config.PRODUCTS` are still `0`, so the shop shows "SOON". `Config.GROUP_ID` is also still `0`, so the Free Reward doesn't ask players to join the group.
+
+## Game passes and developer products (universe 10776824767)
+
+Created through Open Cloud on 2026-11-19. Icons are drawn by `blender/make_pass_icons.py` and saved in `blender/export/icons/`.
+
+| Id | Kind | Name | Robux |
+|---|---|---|---|
+| 2096448686 | Game pass | VIP (+20% cash) | 199 |
+| 2094550605 | Game pass | 2x Money | 399 |
+| 2093692759 | Game pass | 2x Luck | 299 |
+| 3733847302 | Developer product | Luck Boost (2x luck, 5 min) | 49 |
+| 3733847308 | Developer product | Starter Pack ($25K + 30 min 2x luck) | 99 |
+| 3733847314 | Developer product | Double Offline Cash | 25 |
+
+## Race layout
+
+The track mesh is visual only. Collision comes from a ring of 120 invisible boxes that `RaceBuilder` lays under the gravel. The ring, obstacle, grid and pad positions are in `ReplicatedStorage.Zoo.RaceLayout`, which uses the same numbers as `blender/race_layout.py`. To move anything, edit both files, then run `require(game.ServerStorage.RaceBuilder:Clone()).build()` from the command bar.
