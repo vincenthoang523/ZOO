@@ -248,12 +248,18 @@ function Config.templateGrid(t: any, colored: boolean?): { number }
 	return table.clone(cells)
 end
 
+-- Upgrade prices, one per level (index = level + 1). Fitted by tools/balance_sim.py so an active player with no
+-- game passes is fully maxed (luck 10/10, capacity 12/12) after about 24 hours of play, with upgrades spaced from
+-- minutes apart at the start to about two hours apart at the end. Re-run the sim after changing any income number.
+Config.LUCK_COSTS = { 810e3, 17e6, 75e6, 270e6, 940e6, 1.9e9, 3.9e9, 7.8e9, 13e9, 24e9 }
+Config.CAP_COSTS = { 39e3, 5.4e6, 38e6, 160e6, 540e6, 1.1e9, 2.9e9, 5.9e9, 11e9, 20e9 }
+
 function Config.luckCost(level: number): number
-	return 500 * 4 ^ level
+	return Config.LUCK_COSTS[level + 1]
 end
 
 function Config.capCost(level: number): number
-	return 300 * 3 ^ level
+	return Config.CAP_COSTS[level + 1]
 end
 
 -- Chance of each rarity for a luck multiplier. Used by the server roll AND the odds screen, so they can never disagree.

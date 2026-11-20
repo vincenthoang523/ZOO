@@ -2,6 +2,12 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-19
+
+- **Right menu:** Daily, Boost, Draw an Animal and Starter Pack are now one column at the top right. All four are the same width, with the same 16 px gap between them, and are about 10% smaller than before. The boost countdown now sits beside the Boost button.
+- **Buy buttons:** the Upgrade and Robux purchase buttons are a calm mint-to-green gradient with no stud texture (`P.calm`).
+- **Economy rebalance:** upgrade prices are now a fitted per-level table (`Config.LUCK_COSTS`, `Config.CAP_COSTS`) instead of `500 x 4^level` and `300 x 3^level`. Under the old prices an active player maxed out in about 25 minutes. `tools/balance_sim.py` puts it at about 24 hours with no game passes and about 11 hours with VIP, x2 Money and x2 Luck. Upgrades come minutes apart at the start and about two hours apart at the end.
+
 ## 2026-11-18
 
 - **Enclosures:** the part-built enclosures are replaced by one Blender mesh, `ZooKit_EnclosurePalm_v3`, built by `enclosure()` in `blender/build_zoo_kit.py` (place v59).

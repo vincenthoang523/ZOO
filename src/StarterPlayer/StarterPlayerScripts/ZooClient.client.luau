@@ -41,6 +41,8 @@ local P = {
 	red = { hex("FF1F2A"), hex("D8000F"), hex("9E0008") },
 	gold = { hex("FFE600"), hex("FF8A00"), hex("B85A00") },
 	orange = { hex("FFB000"), hex("FF6A00"), hex("A33F00") },
+	-- the one soft palette: upgrade and purchase buttons, a calm mint-to-green with no studs
+	calm = { hex("9BEDB5"), hex("3DBE72"), hex("268A52") },
 }
 local C = { yellow = hex("FFE600"), cash = hex("6BFF3A"), red = hex("FF1F2A"), line = hex("D6D6D6"), canvas = rgb(44, 58, 88) } -- dark canvas: the grey base colour and pale paints stand out on it
 local RARITY_PAL = { P.cyan, P.lime, P.blue, P.purple, P.gold, P.red } -- Common .. Mythic
@@ -171,7 +173,7 @@ end
 local BACK = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local QUICK = TweenInfo.new(0.07, Enum.EasingStyle.Quad)
 -- pressable: black outline, dark lip, gradient face, studs. Centre anchored so hover and press grow from the middle.
--- opt: text, icon, iconSize, vertical, plain (no studs, for the X), lip, r, name
+-- opt: text, icon, iconSize, vertical, plain (no studs: the X and the calm buy buttons), lip, r, name
 local function button(parent, str, pal, size, pos, callback, opt)
 	opt = opt or {}
 	local r = opt.r or 12
@@ -378,10 +380,10 @@ end
 local passButtons = {}
 local function priceButton(parent, kind, key, size, pos, ts, prefix)
 	local b
-	b = button(parent, "...", P.lime, size, pos, function()
+	b = button(parent, "...", P.calm, size, pos, function()
 		if kind == "pass" and state.passes[key] then return end
 		buy(kind, key)
-	end, { icon = "robux", iconSize = math.floor(size.Y.Offset * 0.6), text = ts or 30 })
+	end, { icon = "robux", iconSize = math.floor(size.Y.Offset * 0.6), text = ts or 30, plain = true })
 	if prefix then
 		label(b.Face.Row, prefix, ts or 30, { Size = O(0, math.ceil((ts or 30) * 1.15)), AutomaticSize = Enum.AutomaticSize.X, LayoutOrder = 0, Name = "Prefix" }, true)
 	end
@@ -423,21 +425,26 @@ tag(railButtons.Free, "2x", O(36, 54), P.purple[2])
 local upgradeAlert = tag(railButtons.Upgrades, "!", O(222, 6))
 upgradeAlert.Visible = false
 
--- right rail: boost, draw, starter pack
-local rightBar = scaled(new("Frame", { AnchorPoint = Vector2.new(1, 0.5), Position = U(1, -14, 0.44, 0), Size = O(240, 340), BackgroundTransparency = 1 }, hud))
-local boostBtn = button(rightBar, "BOOST", P.purple, O(214, 66), O(133, 36), function() open("Boost") end, { icon = "bolt", iconSize = 52, text = 32 })
-tag(boostBtn, "2x", O(34, 54), P.lime[3])
-local boostTimer = label(rightBar, "", 22, { Position = O(26, 72), Size = O(214, 28), TextColor3 = C.yellow })
-button(rightBar, "DRAW AN\nANIMAL", P.gold, O(232, 96), O(124, 160), function() open("Editor") end, { icon = "pencil", iconSize = 70, text = 30 })
-local starterBtn = button(rightBar, "STARTER\nPACK", P.blue, O(148, 128), O(166, 280), function() open("Starter") end, { icon = "chest", iconSize = 80, text = 20, vertical = true })
-live(starterBtn.Face.Row.IconSlot.Icon, "float")
-
--- top right: daily rewards
-local dailyBox = scaled(new("Frame", { AnchorPoint = Vector2.new(1, 0), Position = U(1, -14, 0, 8), Size = O(190, 70), BackgroundTransparency = 1 }, hud))
-local dailyBtn = button(dailyBox, "DAILY", P.cyan, O(180, 62), O(95, 34), function() open("Daily") end, { icon = "calendar", iconSize = 50, text = 30 })
-local dailyAlert = tag(dailyBtn, "!", O(176, 4))
+-- right rail, top right: daily, boost, draw, starter pack. One column, one width, the same 16 px gap between every button.
+local RAIL_W, RAIL_GAP = 200, 16
+local rightBar = scaled(new("Frame", { AnchorPoint = Vector2.new(1, 0), Position = U(1, -14, 0, 8), Size = O(RAIL_W + 6, 340), BackgroundTransparency = 1 }, hud))
+local railY = 6
+local function railButton(str, pal, h, callback, opt)
+	local b = button(rightBar, str, pal, O(RAIL_W, h), O(RAIL_W / 2 + 3, railY + h / 2), callback, opt)
+	railY += h + RAIL_GAP
+	return b
+end
+local dailyBtn = railButton("DAILY", P.cyan, 58, function() open("Daily") end, { icon = "calendar", iconSize = 46, text = 28 })
+local dailyAlert = tag(dailyBtn, "!", O(RAIL_W - 4, 4))
 dailyAlert.Visible = false
-hideWhileOpen = { leftBar, rightBar, dailyBox }
+local boostBtn = railButton("BOOST", P.purple, 58, function() open("Boost") end, { icon = "bolt", iconSize = 46, text = 28 })
+tag(boostBtn, "2x", O(30, 50), P.lime[3])
+-- the boost countdown sits beside its button, so it doesn't open a gap in the column
+local boostTimer = label(boostBtn, "", 22, { AnchorPoint = Vector2.new(1, 0.5), Position = U(0, -8, 0.5, 0), Size = O(110, 28), TextXAlignment = RIGHT, TextColor3 = C.yellow })
+railButton("DRAW AN\nANIMAL", P.gold, 80, function() open("Editor") end, { icon = "pencil", iconSize = 60, text = 26 })
+local starterBtn = railButton("STARTER\nPACK", P.blue, 80, function() open("Starter") end, { icon = "chest", iconSize = 60, text = 24 })
+live(starterBtn.Face.Row.IconSlot.Icon, "float")
+hideWhileOpen = { leftBar, rightBar }
 
 local function upgradeReady(cash)
 	return (state.luckLevel < Config.MAX_LUCK_LEVEL and cash >= Config.luckCost(state.luckLevel))
@@ -520,7 +527,7 @@ do
 		label(face, sub, 20, { Position = O(166, 52), Size = O(300, 26), TextXAlignment = LEFT, TextColor3 = C.yellow })
 		local level = label(face, "", 40, { Position = O(164, 78), Size = O(320, 52), TextXAlignment = LEFT })
 		local cost = label(face, "", 24, { Position = O(540, 10), Size = O(200, 30), TextColor3 = C.cash })
-		local btn = button(face, "UPGRADE", P.lime, O(200, 66), O(640, 82), function() Remotes.Upgrade:FireServer(kind) end, { text = 32 })
+		local btn = button(face, "UPGRADE", P.calm, O(200, 66), O(640, 82), function() Remotes.Upgrade:FireServer(kind) end, { text = 32, plain = true })
 		return level, cost, btn
 	end
 	local luckLevel, luckCost, luckBtn = row(0, P.green, "clover", "Luck", "Draw rarer animals", "luck")
