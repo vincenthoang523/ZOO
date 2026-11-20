@@ -1922,6 +1922,55 @@ do
 		local weld = part:WaitForChild("MountWeld", 5)
 		if weld and mounts[part] then mounts[part].weld, mounts[part].base = weld, weld.C0 end
 	end
+
+	-- driving your own car: the VehicleSeat reads WASD, arrows, a gamepad or the thumbstick as throttle and steer.
+	-- It pulls away slowly and builds up to the server's "Top" speed, coasts down when you let go, and steers like a
+	-- car: the wheel follows the stick with a lag and you can't turn on the spot. Bumping into something costs speed.
+	local function drive(car)
+		if car:GetAttribute("Owner") ~= player.UserId then return end
+		local body, seat = car:WaitForChild("Body", 5), car:WaitForChild("Seat", 5)
+		local lv, ao = body and body:WaitForChild("LinearVelocity", 5), body and body:WaitForChild("AlignOrientation", 5)
+		if not (lv and ao and seat) then return end
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end
+		local look = body.CFrame.LookVector
+		local yaw = math.atan2(-look.X, -look.Z)
+		local speed, steer = 0, 0
+		local conn
+		conn = RunService.Heartbeat:Connect(function(dt)
+			if not car.Parent then
+				conn:Disconnect()
+				if hum and hum.Parent then hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true) end
+				return
+			end
+			if body.Anchored then return end -- still on the grid
+			local top = car:GetAttribute("Top") or 0
+			local throttle, input = seat.ThrottleFloat, seat.SteerFloat
+			if RunService:IsStudio() then -- shortcut: test hook so a script can drive in Studio playtests
+				throttle, input = car:GetAttribute("TestThrottle") or throttle, car:GetAttribute("TestSteer") or input
+			end
+			steer += (input - steer) * math.min(1, dt / R.STEER_LAG)
+			if speed > top then
+				speed = math.max(top, speed - R.BRAKE * dt) -- mud, or a boost running out
+			elseif throttle > 0 then
+				local a = top > R.TOP_SPEED and R.BOOST_ACCEL or R.ACCEL
+				speed = math.min(top, speed + a * dt * (1 - 0.6 * math.max(speed, 0) / top)) -- strong pull at first, easing off near the top
+			elseif throttle < 0 then
+				speed = math.max(-R.REVERSE_SPEED, speed - R.BRAKE * dt)
+			else
+				speed -= math.sign(speed) * math.min(math.abs(speed), R.COAST * dt)
+			end
+			local fwd = CFrame.Angles(0, yaw, 0).LookVector
+			local actual = body.AssemblyLinearVelocity:Dot(fwd)
+			if speed > 6 and actual < speed - 8 then speed = math.max(actual + 3, 0) end -- hit something: lose the speed
+			-- no turning on the spot: full turn rate once rolling, and only a little when crawling (enough to nose out of a crash)
+			local grip = math.clamp(math.abs(speed) / 14, throttle ~= 0 and 0.3 or 0, 1)
+			yaw -= steer * math.rad(R.TURN) * grip * dt * (speed >= 0 and 1 or -1)
+			local rot = CFrame.Angles(0, yaw, 0)
+			ao.CFrame = rot
+			lv.PlaneVelocity = Vector2.new(rot.LookVector.X, rot.LookVector.Z) * speed
+		end)
+	end
 	local function addRing(m)
 		if rings[m] then return end
 		local centre = m:GetPivot() * CFrame.new(0, 5.1, 0) -- the hoop's centre (boost_ring(): R + r/2)
@@ -1932,7 +1981,7 @@ do
 		end
 		rings[m] = { centre = centre, parts = parts }
 	end
-	for tagName, fn in { RaceMount = addMount, BoostRing = addRing } do
+	for tagName, fn in { RaceMount = addMount, BoostRing = addRing, RaceCar = drive } do
 		CollectionService:GetInstanceAddedSignal(tagName):Connect(function(o) task.spawn(fn, o) end)
 		CollectionService:GetInstanceRemovedSignal(tagName):Connect(function(o) mounts[o], rings[o] = nil, nil end)
 		for _, o in CollectionService:GetTagged(tagName) do task.spawn(fn, o) end
@@ -1945,7 +1994,7 @@ do
 			if hrp then
 				local moving = hrp.AssemblyLinearVelocity.Magnitude > 3
 				local s = math.sin(t * 9 + m.seed)
-				m.weld.C0 = m.base * CFrame.new(0, moving and math.abs(s) * 0.5 or 0, 0) * CFrame.Angles(0, 0, moving and s * 0.05 or 0)
+				m.weld.C0 = m.base * CFrame.new(0, moving and math.abs(s) * 0.35 or 0, 0) * CFrame.Angles(0, 0, moving and s * 0.04 or 0)
 			end
 		end
 		local turn = CFrame.Angles(0, 0, t * 0.8)

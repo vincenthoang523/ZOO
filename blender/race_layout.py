@@ -6,7 +6,7 @@ import math
 
 CENTRE_R = 150.0
 START_A = 84.0                                     # start/finish line, just east of the gate (gate is at 90)
-GRID = [(START_A - 2.0 - 2.4 * row, lat) for row in range(2) for lat in (-7.5, -2.5, 2.5, 7.5)]
+GRID = [(START_A - 2.0 - 3.8 * row, lat) for row in range(2) for lat in (-7.5, -2.5, 2.5, 7.5)]
 RINGS = [(110, -7), (140, 7), (175, 0), (205, -8), (235, 6), (270, -6), (300, 8), (330, -2), (355, 7), (25, -7), (52, 5)]
 OBSTACLES = [("RaceLog", 125, 6), ("RaceHay", 152, -8), ("RaceMud", 160, 4), ("RaceRocks", 190, 8), ("RaceLog", 220, -6),
              ("RaceMud", 250, 0), ("RaceHay", 262, 9), ("RaceRocks", 285, -9), ("RaceLog", 315, 5), ("RaceMud", 345, -5),

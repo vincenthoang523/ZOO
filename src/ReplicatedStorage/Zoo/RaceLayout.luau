@@ -6,9 +6,9 @@ local L = {}
 L.CENTRE_R = 150
 L.TOP = -0.85 -- gravel surface height
 L.START_A = 84 -- start/finish line, just east of the gate (the gate is at 90)
-L.GRID = {} -- 8 starting spots, two rows of four behind the line
+L.GRID = {} -- 8 starting spots, two rows of four behind the line, a car length and a bit apart
 for row = 0, 1 do
-	for _, lat in { -7.5, -2.5, 2.5, 7.5 } do table.insert(L.GRID, { L.START_A - 2 - 2.4 * row, lat }) end
+	for _, lat in { -7.5, -2.5, 2.5, 7.5 } do table.insert(L.GRID, { L.START_A - 2 - 3.8 * row, lat }) end
 end
 L.RINGS = { { 110, -7 }, { 140, 7 }, { 175, 0 }, { 205, -8 }, { 235, 6 }, { 270, -6 }, { 300, 8 }, { 330, -2 }, { 355, 7 }, { 25, -7 }, { 52, 5 } }
 L.OBSTACLES = { { "RaceLog", 125, 6 }, { "RaceHay", 152, -8 }, { "RaceMud", 160, 4 }, { "RaceRocks", 190, 8 }, { "RaceLog", 220, -6 },

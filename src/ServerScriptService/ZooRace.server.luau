@@ -1,9 +1,10 @@
 --!nonstrict
 -- ZooRace: animal races round the gravel loop on the outskirts. Players queue at the pad inside the gate with one of
--- their animals; once enough are queued they are put on the starting grid riding a cutout of that animal, a countdown
--- runs, and they race Config.RACE.LAPS laps. Everyone has the same speed; boost rings make the difference, mud slows
--- you down and logs, hay and rocks are in the way. The winner spins the prize wheel, every other finisher gets cash.
--- The server owns everything: progress, rings, mud, places and prizes. Clients only ask to join or leave.
+-- their animals; once enough are queued they are put on the starting grid, seated on a cutout of that animal built as a
+-- little car, a countdown runs, and they race Config.RACE.LAPS laps. The driver's client steers the car (it owns its
+-- physics); the server sets each car's top speed ("Top": normal, boost or mud), so boost rings make the difference, mud
+-- slows you down and logs, hay and rocks are in the way. The winner spins the prize wheel, every other finisher gets cash.
+-- The server owns progress, rings, mud, places and prizes, and counts no progress faster than a boost could go.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
@@ -64,39 +65,72 @@ local function broadcast()
 	end
 end
 
------ the ride: a cutout of the animal under the player, who stands on its back -----
+----- the ride: a car built round a cutout of the animal; the player sits on its back -----
 local function unmount(player, rc)
 	local hum = rc.hum
-	if rc.mount then rc.mount:Destroy() end
-	if hum and hum.Parent then
-		hum.HipHeight, hum.WalkSpeed, hum.JumpHeight, hum.JumpPower = rc.saved.hip, rc.saved.speed, rc.saved.jumpH, rc.saved.jumpP
-	end
+	if rc.car then rc.car:Destroy() end -- the seat goes with it, so the player is standing again
+	if hum and hum.Parent then hum.JumpHeight, hum.JumpPower = rc.saved.jumpH, rc.saved.jumpP end
 end
 
-local function mount(player, animal)
+local function mount(player, animal, cf)
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	if not (hum and hrp) or hum.Health <= 0 or hum.RigType ~= Enum.HumanoidRigType.R15 then return nil end
+	if not (hum and hrp) or hum.Health <= 0 then return nil end
 	local k = 1 + (animal.r or 1) * 0.06
 	local w, h = 7.5 * k, 5.2 * k
-	local part = Instance.new("Part")
-	part.Name, part.Size, part.Transparency, part.Massless = "RaceMount", Vector3.new(w, h, 0.05), 1, true
-	part.CanCollide, part.CanQuery, part.CanTouch = false, false, false
-	part:SetAttribute("Design", HttpService:JSONEncode(animal.d))
-	part:SetAttribute("Rarity", animal.r)
-	local saved = { hip = hum.HipHeight, speed = hum.WalkSpeed, jumpH = hum.JumpHeight, jumpP = hum.JumpPower }
-	local feet = hrp.Size.Y / 2 + saved.hip -- root centre above the feet
-	local lift = h - 0.4 -- feet sink a little into the cutout's back
-	hum.HipHeight = saved.hip + lift
-	local weld = Instance.new("Weld")
-	weld.Name, weld.Part0, weld.Part1 = "MountWeld", hrp, part
-	-- the drawing's head is on its left edge (+X): turn +X to face forward
-	weld.C0 = CFrame.new(0, h / 2 - (feet + lift), 0) * CFrame.Angles(0, math.pi / 2, 0)
-	weld.Parent = part
-	part.Parent = char
-	CollectionService:AddTag(part, "RaceMount")
-	return { mount = part, hum = hum, hrp = hrp, saved = saved, feet = feet + lift }
+	local car = Instance.new("Model")
+	car.Name = "RaceCar"
+	-- body: the only part that collides, a low box under the cutout with no friction, so it glides on the gravel
+	local body = Instance.new("Part")
+	body.Name, body.Size, body.Transparency, body.Anchored = "Body", Vector3.new(3.2, 2, w * 0.85), 1, true
+	body.CanQuery, body.CanTouch = false, false
+	body.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0, 0, 100, 100)
+	body.CFrame = cf * CFrame.new(0, 1.15, 0)
+	body.Parent = car
+	-- the drawing (ZooClient draws both faces and makes it hop); its +X edge is the head, turned to face forward
+	local cut = Instance.new("Part")
+	cut.Name, cut.Size, cut.Transparency, cut.Massless = "RaceMount", Vector3.new(w, h, 0.05), 1, true
+	cut.CanCollide, cut.CanQuery, cut.CanTouch = false, false, false
+	cut.CFrame = cf * CFrame.new(0, h / 2, 0) * CFrame.Angles(0, math.pi / 2, 0)
+	cut:SetAttribute("Design", HttpService:JSONEncode(animal.d))
+	cut:SetAttribute("Rarity", animal.r)
+	local mw = Instance.new("Weld")
+	mw.Name, mw.Part0, mw.Part1, mw.C0 = "MountWeld", body, cut, body.CFrame:ToObjectSpace(cut.CFrame)
+	mw.Parent = cut
+	cut.Parent = car
+	-- the seat rides on the cutout's back, so the rider hops with it; VehicleSeat gives the client throttle and steer
+	local seat = Instance.new("VehicleSeat")
+	seat.Name, seat.Size, seat.Transparency, seat.Massless = "Seat", Vector3.new(2, 0.4, 2), 1, true
+	seat.CanCollide, seat.CanQuery, seat.CanTouch = false, false, false
+	seat.MaxSpeed, seat.Torque, seat.TurnSpeed, seat.HeadsUpDisplay = 0, 0, 0, false
+	seat.CFrame = cf * CFrame.new(0, h - 0.15, 0.4)
+	local sw = Instance.new("WeldConstraint")
+	sw.Part0, sw.Part1 = cut, seat
+	sw.Parent = seat
+	seat.Parent = car
+	-- the client drives these two: speed along the ground (gravity stays free) and the heading, kept upright
+	local att = Instance.new("Attachment")
+	att.Parent = body
+	local lv = Instance.new("LinearVelocity")
+	lv.Attachment0, lv.RelativeTo, lv.VelocityConstraintMode = att, Enum.ActuatorRelativeTo.World, Enum.VelocityConstraintMode.Plane
+	lv.PrimaryTangentAxis, lv.SecondaryTangentAxis = Vector3.xAxis, Vector3.zAxis
+	lv.MaxForce, lv.PlaneVelocity = 60000, Vector2.zero
+	lv.Parent = body
+	local ao = Instance.new("AlignOrientation")
+	ao.Mode, ao.Attachment0, ao.MaxTorque, ao.Responsiveness, ao.CFrame = Enum.OrientationAlignmentMode.OneAttachment, att, 1e7, 30, cf.Rotation
+	ao.Parent = body
+	car.PrimaryPart = body
+	car:SetAttribute("Owner", player.UserId)
+	car:SetAttribute("Top", 0)
+	car.Parent = RACE
+	CollectionService:AddTag(cut, "RaceMount")
+	CollectionService:AddTag(car, "RaceCar")
+	local saved = { jumpH = hum.JumpHeight, jumpP = hum.JumpPower }
+	hum.JumpHeight, hum.JumpPower = 0, 0
+	char:PivotTo(seat.CFrame * CFrame.new(0, 2.5, 0))
+	seat:Sit(hum)
+	return { car = car, body = body, seat = seat, hum = hum, saved = saved }
 end
 
 ----- joining -----
@@ -107,15 +141,13 @@ local function addRacer(entry, slot)
 		Api.notify(player, "That animal isn't in your zoo any more.")
 		return false
 	end
-	local rc = mount(player, animal)
+	local g = L.GRID[slot]
+	local rc = mount(player, animal, L.frame(g[1], g[2]))
 	if not rc then
 		Api.notify(player, "Couldn't start your race - respawn and try again.")
 		return false
 	end
-	local g = L.GRID[slot]
-	rc.hum.WalkSpeed, rc.hum.JumpHeight, rc.hum.JumpPower = 0, 0, 0
-	player.Character:PivotTo(L.frame(g[1], g[2]) * CFrame.new(0, rc.feet + 0.3, 0))
-	rc.slot, rc.lastA, rc.lastPos = slot, g[1], rc.hrp.Position
+	rc.slot, rc.lastA, rc.lastPos = slot, g[1], rc.body.Position
 	rc.progress = ((g[1] - L.START_A + 180) % 360) - 180 -- just behind the line: a little negative
 	rc.boostUntil, rc.ringAt, rc.speed, rc.name = 0, {}, 0, animal.d.n
 	racers[player] = rc
@@ -225,6 +257,8 @@ end)
 Players.PlayerRemoving:Connect(function(player)
 	local i = queued(player)
 	if i then table.remove(queue, i) end
+	local rc = racers[player]
+	if rc and rc.car then rc.car:Destroy() end
 	racers[player] = nil
 	lastCall[player] = nil
 end)
@@ -241,11 +275,16 @@ end
 local function step(dt)
 	local t = now()
 	for player, rc in racers do
-		if not (player.Parent and rc.hrp.Parent and rc.hum.Health > 0) then
-			racers[player] = nil -- died or reset: the cutout went with the old character
+		if not (player.Parent and rc.body.Parent and rc.hum.Parent and rc.hum.Health > 0) then
+			racers[player] = nil -- died, reset or left
+			if rc.car then rc.car:Destroy() end
 			continue
 		end
-		local pos = rc.hrp.Position
+		if rc.seat.Occupant ~= rc.hum then -- hopped off somehow: back in the saddle
+			rc.hum.Parent:PivotTo(rc.seat.CFrame * CFrame.new(0, 2.5, 0))
+			rc.seat:Sit(rc.hum)
+		end
+		local pos = rc.body.Position
 		local a = L.angle(pos)
 		local r = Vector2.new(pos.X, pos.Z).Magnitude
 		local d = ((a - rc.lastA + 180) % 360) - 180
@@ -265,9 +304,10 @@ local function step(dt)
 				local p = f:PointToObjectSpace(pos)
 				if (p.X / L.MUD_RX) ^ 2 + (p.Z / L.MUD_RZ) ^ 2 < 1 then inMud = true break end
 			end
-			local speed = t < rc.boostUntil and R.BOOST_SPEED or inMud and R.MUD_SPEED or R.SPEED
+			local speed = t < rc.boostUntil and R.BOOST_SPEED or inMud and R.MUD_SPEED or R.TOP_SPEED
 			if speed ~= rc.speed then
-				rc.speed, rc.hum.WalkSpeed = speed, speed
+				rc.speed = speed
+				rc.car:SetAttribute("Top", speed) -- the driver's client accelerates or slows toward it
 				if inMud and speed == R.MUD_SPEED then Remotes.RaceInfo:FireClient(player, { mud = true }) end
 			end
 			if rc.progress >= LAP_DEG * R.LAPS then finish(player, rc) end
@@ -307,7 +347,12 @@ task.spawn(function()
 				broadcast()
 			elseif now() >= phaseEnds then
 				phase, phaseEnds = "racing", now() + R.TIME_LIMIT
-				for _, rc in racers do rc.speed, rc.hum.WalkSpeed = R.SPEED, R.SPEED end
+				for p, rc in racers do -- release the cars and hand each one's physics to its driver
+					rc.speed = R.TOP_SPEED
+					rc.car:SetAttribute("Top", R.TOP_SPEED)
+					rc.body.Anchored = false
+					pcall(rc.body.SetNetworkOwner, rc.body, p)
+				end
 				broadcast()
 			end
 		end

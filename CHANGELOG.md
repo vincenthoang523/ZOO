@@ -4,6 +4,14 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-20
 
+- **Race driving:** racers now sit on their animal and drive it like a car (place v80).
+  - **The car:** the cutout is built into a small car: an invisible low body with no friction, a VehicleSeat on the cutout's back, a LinearVelocity and an AlignOrientation. The driver's client owns its physics.
+  - **Controls:** WASD, the arrow keys, a gamepad or the mobile thumbstick drive the car through the seat.
+  - **Speed:** the car pulls away slowly, eases up to 40 in about 5 seconds and coasts down when you let go. S brakes, then reverses at up to 10.
+  - **Steering:** the wheel follows the stick with a 0.3-second lag and turns at most 75 degrees a second. It can't turn on the spot, though crawling lets you steer a little to nose out of a crash. Hitting a log, hay or rock drops your speed.
+  - **Speed changes:** the server sets each car's top speed: normal 40, boost 62 or mud 16. Boosts accelerate hard; mud and the end of a boost brake you down.
+  - **Grid:** the two rows are now further apart so the cars fit. Jumping is off while seated, and anyone who leaves the seat is put back on.
+  - **Tested:** a scripted driver finished 2 laps in 69 seconds with 12 boosts.
 - **Race polish** (place v77, `ZooKit_Race_v2`):
   - **Thinner rings:** the boost rings are a thin hoop that rests on the gravel. The stone block under each one is gone.
   - **Border:** a rail fence runs round the outside of the race loop, with a tall invisible wall in it, so players can't walk off into the scenery.

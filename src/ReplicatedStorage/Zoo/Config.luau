@@ -90,11 +90,15 @@ Config.ICONS = {
 }
 Config.LUCK_BOOST_MINUTES = 5
 
--- Animal races round the outskirts (ZooRace.server.luau, layout in RaceLayout). Everyone runs at the same speed;
--- boost rings are how you win. The winner spins the prize wheel; every other finisher gets CONSOLATION_SECONDS of income.
+-- Animal races round the outskirts (ZooRace.server.luau, layout in RaceLayout). Racers sit on their animal and drive it
+-- like a car (ZooClient's race driving): it pulls away slowly and builds up to TOP_SPEED, and turns are wide and lazy.
+-- Everyone has the same car; boost rings are how you win. The winner spins the prize wheel; every other finisher gets
+-- CONSOLATION_SECONDS of income. Speeds are studs/second, ACCEL/BRAKE/COAST studs/second each second, TURN degrees/second.
 Config.RACE = {
 	LAPS = 2, MIN_PLAYERS = 2, MAX_PLAYERS = 8, COUNTDOWN = 5,
-	SPEED = 32, BOOST_SPEED = 58, BOOST_SECONDS = 2.5, MUD_SPEED = 15,
+	TOP_SPEED = 40, BOOST_SPEED = 62, BOOST_SECONDS = 2.5, MUD_SPEED = 16, REVERSE_SPEED = 10,
+	ACCEL = 13, BOOST_ACCEL = 45, BRAKE = 30, COAST = 9,
+	TURN = 75, STEER_LAG = 0.3, -- full lock turns 75 deg/s once moving; the wheel takes about STEER_LAG seconds to follow the stick
 	TIME_LIMIT = 150, AFTER_WINNER = 25, -- seconds: the whole race, and how long the rest get once someone has won
 	CONSOLATION_SECONDS = 120,
 	-- prize wheel slices, clockwise from the top. cash = seconds of the winner's income; luck/money = minutes of 2x
