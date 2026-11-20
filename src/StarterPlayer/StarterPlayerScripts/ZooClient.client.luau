@@ -173,9 +173,10 @@ end
 local BACK = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local QUICK = TweenInfo.new(0.07, Enum.EasingStyle.Quad)
 -- pressable: black outline, dark lip, gradient face, studs. Centre anchored so hover and press grow from the middle.
--- opt: text, icon, iconSize, vertical, plain (no studs: the X and the calm buy buttons), lip, r, name
+-- opt: text, icon, iconSize, vertical, plain (no studs: the X and the calm buy buttons), vivid (keep lime bright), lip, r, name
 local function button(parent, str, pal, size, pos, callback, opt)
 	opt = opt or {}
+	if pal == P.lime and not opt.vivid then pal, opt.plain = P.calm, true end -- every green action button is the calm buy style
 	local r = opt.r or 12
 	local b = new("TextButton", { Name = opt.name or "Button", Text = "", AutoButtonColor = false, AnchorPoint = CENTER, Position = pos, Size = size,
 		BackgroundColor3 = pal[3] }, parent)
@@ -185,6 +186,7 @@ local function button(parent, str, pal, size, pos, callback, opt)
 	round(face, r - 1)
 	grad(face, pal)
 	studs(face, 0.62, nil, r - 1).Visible = not opt.plain
+	if opt.plain then b:SetAttribute("Plain", true) end
 	local row = new("Frame", { Name = "Row", BackgroundTransparency = 1, Size = S(1, 1) }, face)
 	new("UIListLayout", { FillDirection = opt.vertical and Enum.FillDirection.Vertical or Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, opt.vertical and -4 or 8), SortOrder = Enum.SortOrder.LayoutOrder }, row)
@@ -218,12 +220,15 @@ local function setLabel(b, str)
 	if l then l.Text = str end
 end
 local function paint(b, pal)
+	-- green always means the calm buy style (no studs); any other colour brings the studs back unless the button was built plain
+	if pal == P.lime then pal = P.calm end
+	b.Face.Studs.Visible = pal ~= P.calm and not b:GetAttribute("Plain")
 	b.BackgroundColor3 = pal[3]
 	b.Face.UIGradient.Color = ColorSequence.new(pal[1], pal[2])
 end
 -- a finished button stays burning: flat lime, white text, no studs and no lip, so it no longer looks pressable
 local function setDone(b, done, str)
-	b.Face.Studs.Visible = not done
+	b.Face.Studs.Visible = not done and not b:GetAttribute("Plain")
 	b.Face.Size = U(1, 0, 1, done and 0 or -5)
 	b.Active = not done
 	if done then paint(b, P.lime) end
@@ -415,34 +420,37 @@ sticker(stats, "cash", 68, O(36, 86))
 local cashLabel = label(stats, "$0", 56, { Size = O(0, 70), AutomaticSize = Enum.AutomaticSize.X, Position = O(76, 50), TextXAlignment = LEFT, TextColor3 = C.cash })
 local rateLabel = label(stats, "+$0/s", 28, { Size = O(0, 36), AutomaticSize = Enum.AutomaticSize.X, Position = O(10, 120), TextXAlignment = LEFT })
 
--- left rail: wide chunky buttons
-local leftBar = scaled(new("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = U(0, 14, 0.46, 0), Size = O(230, 320), BackgroundTransparency = 1 }, hud))
+-- side menus: two mirrored columns at the same height, same button size and gap, so their rows line up across the screen
+local RAIL_W, RAIL_H, RAIL_GAP = 186, 56, 12
+local RAIL_SIZE = O(RAIL_W + 8, 4 * RAIL_H + 3 * RAIL_GAP + 8)
+local function rail(anchorX, posX)
+	return scaled(new("Frame", { AnchorPoint = Vector2.new(anchorX, 0.5), Position = U(anchorX, posX, 0.46, 0), Size = RAIL_SIZE, BackgroundTransparency = 1 }, hud))
+end
+local function railButton(bar, i, str, pal, callback, opt)
+	return button(bar, str, pal, O(RAIL_W, RAIL_H), O(RAIL_W / 2 + 4, 4 + RAIL_H / 2 + (i - 1) * (RAIL_H + RAIL_GAP)), callback, opt)
+end
+
+-- left: shop, upgrades, my zoo, free
+local leftBar = rail(0, 14)
 local railButtons = {}
 for i, b in { { "SHOP", P.lime, "shop", "Shop" }, { "UPGRADES", P.blue, "upgrade", "Upgrades" }, { "MY ZOO", P.pink, "paw", "Inventory" }, { "FREE", P.orange, "luck", "Free" } } do
-	railButtons[b[4]] = button(leftBar, b[1], b[2], O(222, 68), O(115, 36 + (i - 1) * 80), function() open(b[4]) end, { icon = b[3], iconSize = 54, text = 32, name = b[4] })
+	railButtons[b[4]] = railButton(leftBar, i, b[1], b[2], function() open(b[4]) end, { icon = b[3], iconSize = 44, text = 26, name = b[4], vivid = true })
 end
-tag(railButtons.Free, "2x", O(36, 54), P.purple[2])
-local upgradeAlert = tag(railButtons.Upgrades, "!", O(222, 6))
+tag(railButtons.Free, "2x", O(30, RAIL_H - 6), P.purple[2])
+local upgradeAlert = tag(railButtons.Upgrades, "!", O(RAIL_W, 6))
 upgradeAlert.Visible = false
 
--- right rail, top right: daily, boost, draw, starter pack. One column, one width, the same 16 px gap between every button.
-local RAIL_W, RAIL_GAP = 200, 16
-local rightBar = scaled(new("Frame", { AnchorPoint = Vector2.new(1, 0), Position = U(1, -14, 0, 8), Size = O(RAIL_W + 6, 340), BackgroundTransparency = 1 }, hud))
-local railY = 6
-local function railButton(str, pal, h, callback, opt)
-	local b = button(rightBar, str, pal, O(RAIL_W, h), O(RAIL_W / 2 + 3, railY + h / 2), callback, opt)
-	railY += h + RAIL_GAP
-	return b
-end
-local dailyBtn = railButton("DAILY", P.cyan, 58, function() open("Daily") end, { icon = "calendar", iconSize = 46, text = 28 })
+-- right: daily, boost, draw, starter pack
+local rightBar = rail(1, -14)
+local dailyBtn = railButton(rightBar, 1, "DAILY", P.cyan, function() open("Daily") end, { icon = "calendar", iconSize = 44, text = 26 })
 local dailyAlert = tag(dailyBtn, "!", O(RAIL_W - 4, 4))
 dailyAlert.Visible = false
-local boostBtn = railButton("BOOST", P.purple, 58, function() open("Boost") end, { icon = "bolt", iconSize = 46, text = 28 })
-tag(boostBtn, "2x", O(30, 50), P.lime[3])
+local boostBtn = railButton(rightBar, 2, "BOOST", P.purple, function() open("Boost") end, { icon = "bolt", iconSize = 44, text = 26 })
+tag(boostBtn, "2x", O(28, RAIL_H - 6), P.lime[3])
 -- the boost countdown sits beside its button, so it doesn't open a gap in the column
 local boostTimer = label(boostBtn, "", 22, { AnchorPoint = Vector2.new(1, 0.5), Position = U(0, -8, 0.5, 0), Size = O(110, 28), TextXAlignment = RIGHT, TextColor3 = C.yellow })
-railButton("DRAW AN\nANIMAL", P.gold, 80, function() open("Editor") end, { icon = "pencil", iconSize = 60, text = 26 })
-local starterBtn = railButton("STARTER\nPACK", P.blue, 80, function() open("Starter") end, { icon = "chest", iconSize = 60, text = 24 })
+railButton(rightBar, 3, "DRAW AN\nANIMAL", P.gold, function() open("Editor") end, { icon = "pencil", iconSize = 46, text = 20 })
+local starterBtn = railButton(rightBar, 4, "STARTER\nPACK", P.blue, function() open("Starter") end, { icon = "chest", iconSize = 46, text = 20 })
 live(starterBtn.Face.Row.IconSlot.Icon, "float")
 hideWhileOpen = { leftBar, rightBar }
 
@@ -1579,7 +1587,7 @@ end)
 
 ----- plot signs: each plot's upgrade sign and draw easel show live info for whoever owns it -----
 do
-	local GREEN, GREY = hex("2BC94A"), hex("6B7280")
+	local GREY = hex("6B7280")
 	local function face(part)
 		for _, g in part:GetChildren() do if g:IsA("SurfaceGui") then g:Destroy() end end
 		return new("SurfaceGui", { Name = "SignGui", Face = Enum.NormalId.Front, SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud, PixelsPerStud = 50,
@@ -1591,7 +1599,8 @@ do
 		local pad = new("Frame", { BackgroundTransparency = 1, Size = U(1, -28, 1, -20), Position = O(14, 10) }, sg)
 		wtext(pad, "UPGRADE ZOO", { Size = S(1, 0.3) })
 		local sub = wtext(pad, "", { Size = S(1, 0.17), Position = S(0, 0.32), TextColor3 = C.cash })
-		local bar = round(new("Frame", { Size = S(1, 0.42), Position = S(0, 0.56), BackgroundColor3 = GREEN }, pad), 14)
+		local bar = round(new("Frame", { Size = S(1, 0.42), Position = S(0, 0.56) }, pad), 14)
+		local barGrad = grad(bar, P.calm) -- same calm green as every buy button
 		ink(bar, 3)
 		sticker(bar, "upgrade", 58, U(0, 42, 0.5, 0))
 		local cost = wtext(bar, "", { Size = U(1, -86, 0.76, 0), Position = U(0, 78, 0.12, 0) })
@@ -1604,7 +1613,7 @@ do
 				bar.Visible = true
 				local maxed = (nextCost or 0) <= 0
 				cost.Text = maxed and "MAXED" or "$" .. Config.format(nextCost)
-				bar.BackgroundColor3 = maxed and GREY or GREEN
+				bar.BackgroundColor3, barGrad.Enabled = maxed and GREY or WHITE, not maxed
 			else
 				sub.Text, sub.TextColor3 = "Empty plot", rgb(190, 196, 206)
 				bar.Visible = false
