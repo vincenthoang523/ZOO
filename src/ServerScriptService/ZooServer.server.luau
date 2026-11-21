@@ -22,7 +22,7 @@ local sessions = {} -- [Player] = { data, loaded, plot, passes, lastCreate, last
 local rng = Random.new()
 
 local function newData()
-	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, moneyUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false }
+	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, moneyUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false, passGrants = {} }
 end
 
 ----- maths -----
@@ -176,7 +176,10 @@ local function onJoin(player)
 	end
 	-- false = the client plays the intro; it only becomes true when the client reports the intro finished
 	player:SetAttribute("IntroDone", s.data.introDone)
-	for name, id in Config.PASSES do s.passes[name] = ownsPass(player, id) end
+	for name, id in Config.PASSES do
+		local grant = s.data.passGrants[name] -- set by an admin's /give pass or /take pass (ZooAdmin), for testing
+		if grant == nil then s.passes[name] = ownsPass(player, id) else s.passes[name] = grant end
+	end
 	-- offline earnings: pay up to OFFLINE_HOURS of income for the time away; the client popup only reports it
 	if s.loaded and s.data.lastSeen > 0 then
 		local away = os.time() - s.data.lastSeen
@@ -405,7 +408,7 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, id, b
 	local s = sessions[player]
 	if not (bought and s) then return end
 	for name, passId in Config.PASSES do
-		if passId == id then s.passes[name] = true end
+		if passId == id then s.passes[name], s.data.passGrants[name] = true, nil end
 	end
 	changed(player)
 end)
@@ -460,6 +463,16 @@ function Api.addMoney(player, minutes)
 	sync(player, true)
 end
 Api.notify = notify
+Api.changed = changed
+-- adds a finished animal (ZooAdmin's /give animal); equips it if there is room. false = the zoo is full
+function Api.addAnimal(player, animal)
+	local s = sessions[player]
+	if not s or #s.data.animals >= Config.MAX_INVENTORY then return false end
+	animal.eq = equippedCount(s) < capacity(s)
+	table.insert(s.data.animals, animal)
+	changed(player)
+	return true
+end
 
 ----- loops -----
 Players.PlayerAdded:Connect(onJoin)

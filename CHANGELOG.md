@@ -4,6 +4,12 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-21
 
+- **Admin give commands** (place v90): `ServerScriptService.ZooAdmin` adds two chat commands for testing. Only admins can use them (`Config.ADMINS` or the owner of the group that owns the game); for anyone else they do nothing. They run on the server from chat, so there is no remote a client could fire.
+  - `/give cash 1.5m` adds cash (K, M, B, T suffixes; a minus amount takes cash away). `/give luck 30` and `/give money 30` add minutes of 2x luck or 2x money.
+  - `/give animal mythic rainbow 5` gives an animal with that rarity, mutation (default Normal) and stars (default 5), drawn as a random showcase template. Rarity and mutation also take their number.
+  - `/give pass vip` (or `money2x`, `luck2x`, `all`) and `/take pass ...` set a pass on or off in the admin's save (`passGrants`), which overrides the real ownership check on join. No purchase is made or touched; a real purchase clears the override.
+  - `exodtust` (135018525) is now in `Config.ADMINS`: they are rank 254 in the group, not the owner, so `/reset` and `/weather` did nothing for them before.
+
 - **Random weather and the Matrix mutation** (place v87):
   - **Weather:** `ServerScriptService.ZooWeather` starts a random weather every 6 to 12 minutes, for 2 to 3 minutes. It is server-wide and shown to everyone through two attributes on `ReplicatedStorage.Zoo`: `Weather` and `WeatherEnds`. Weathers are data in `Config.WEATHERS`: mutation and its chance, duration, icon, colour, Lighting look and falling characters.
   - **Matrix weather:** the sky goes dark green, green code falls down the screen behind the HUD, and a banner at the top shows the weather, the boosted odds and a countdown. Toasts move down under the banner while it is up.
