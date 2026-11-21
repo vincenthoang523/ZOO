@@ -2,6 +2,10 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-21
+
+- **Spinning Top Earners board:** the leaderboard in the middle of the plaza turns slowly (one turn every 36 seconds), so players on every side can read it. Both faces already show the list. Each client spins it locally, timed by the server clock so everyone sees the same angle; the stone base stays still (place v83).
+
 ## 2026-11-20
 
 - **Race driving:** racers now sit on their animal and drive it like a car (place v78).
