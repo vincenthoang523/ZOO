@@ -46,11 +46,24 @@ local P = {
 }
 local C = { yellow = hex("FFE600"), cash = hex("6BFF3A"), red = hex("FF1F2A"), line = hex("D6D6D6"), canvas = rgb(44, 58, 88) } -- dark canvas: the grey base colour and pale paints stand out on it
 local RARITY_PAL = { P.cyan, P.lime, P.blue, P.purple, P.gold, P.red } -- Common .. Mythic
-local MUT_PAL = { -- Normal, Gold, Diamond, Rainbow (Config.MUTATIONS order)
+local MUT_PAL = { -- Normal, Gold, Diamond, Rainbow, Matrix (Config.MUTATIONS order)
 	{ hex("EEF2F8"), hex("9AA4B5"), hex("5C6575") }, P.gold, { hex("C9FDFF"), hex("2EC4FF"), hex("1677B3") },
 	ColorSequence.new({ ColorSequenceKeypoint.new(0, hex("FF2B2B")), ColorSequenceKeypoint.new(0.2, hex("FF9A00")), ColorSequenceKeypoint.new(0.4, hex("FFE600")),
 		ColorSequenceKeypoint.new(0.6, hex("2BE000")), ColorSequenceKeypoint.new(0.8, hex("00BFFF")), ColorSequenceKeypoint.new(1, hex("CC00FF")) }),
+	{ hex("8CFFAE"), hex("00C853"), hex("006B2B") },
 }
+-- Matrix mutation: a drawing turns into shades of code green with a glowing rim, keeping its lights and darks (roll screen and zoo)
+local function matrixTint(root)
+	for _, o in root:GetDescendants() do
+		if o:IsA("Frame") and o.BackgroundTransparency < 1 then
+			local c = o.BackgroundColor3
+			local l = 0.3 * c.R + 0.59 * c.G + 0.11 * c.B
+			o.BackgroundColor3 = if l > 0.97 then hex("B4FFC8") else Color3.new(0, 0.12 + 0.75 * l * l, 0.05 + 0.3 * l * l) -- white rim stays bright
+		elseif o:IsA("ImageLabel") then
+			o.ImageColor3 = hex("6BFF9A")
+		end
+	end
+end
 local STUD = "rbxassetid://3014551673" -- 2 x 2 studs per tile
 local ICON = Config.ICONS or {}
 
@@ -1453,6 +1466,7 @@ do
 		nameL.Text = res.name
 		art:ClearAllChildren()
 		Render.draw(art, res.d, true, 2)
+		if minfo and minfo.name == "Matrix" then matrixTint(art) end
 		ring.Color = WHITE
 		raysF.Visible = false
 		for _, b in bars do b.Size = U(0, 0, 1, 0) end
@@ -1523,6 +1537,18 @@ local function wtext(parent, str, props)
 	return l
 end
 local animals = {}
+-- extra look for a mutation's animals walking in the zoo, by mutation name
+local MUT_FX = {
+	Matrix = function(part)
+		for _, sg in part:GetChildren() do
+			if sg:IsA("SurfaceGui") then matrixTint(sg) end
+		end
+		new("PointLight", { Color = hex("3CFF6E"), Range = 8, Brightness = 1 }, part)
+		new("ParticleEmitter", { Color = ColorSequence.new(hex("3CFF6E")), LightEmission = 1, Rate = 8, Lifetime = NumberRange.new(1, 1.6), Speed = NumberRange.new(2, 4),
+			EmissionDirection = Enum.NormalId.Top, SpreadAngle = Vector2.new(10, 10), Size = NumberSequence.new(0.35, 0), Transparency = NumberSequence.new(0.2, 1) }, part)
+	end,
+}
+
 local function addAnimal(part)
 	if animals[part] or not part:IsDescendantOf(workspace) then return end
 	local ok, design = pcall(HttpService.JSONDecode, HttpService, part:GetAttribute("Design"))
@@ -1542,6 +1568,7 @@ local function addAnimal(part)
 	wtext(tagGui, design.n or "", { Size = S(1, 0.5) })
 	local info = Config.RARITIES[rarity]
 	local mut = Config.MUTATIONS[part:GetAttribute("Mutation") or 1]
+	if mut and MUT_FX[mut.name] then MUT_FX[mut.name](part) end
 	if info then
 		local prefix = mut and mut.name ~= "Normal" and mut.name:upper() .. " " or ""
 		wtext(tagGui, prefix .. info.name:upper() .. "  $" .. Config.format(part:GetAttribute("Income") or info.rate) .. "/s", { Size = S(1, 0.42), Position = S(0, 0.52), TextColor3 = prefix ~= "" and mut.color or info.color })
@@ -1584,6 +1611,98 @@ RunService.Heartbeat:Connect(function(dt)
 		part.CFrame = a.pen.CFrame * CFrame.new(a.x, a.y + hop, a.z) * CFrame.Angles(0, a.yaw, 0)
 	end
 end)
+
+----- weather: the server picks random weathers (ZooWeather); every client tweens the sky, drops the falling code and shows the banner -----
+do
+	local banner = scaled(new("Frame", { Name = "Weather", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 6), Size = O(460, 78), BackgroundColor3 = BLACK, Visible = false }, hud))
+	round(banner, 16)
+	ink(banner, 4)
+	local face = round(new("Frame", { Name = "Face", Size = U(1, 0, 1, -5) }, banner), 15)
+	local faceGrad = grad(face, P.lime)
+	studs(face, 0.65, nil, 15)
+	local iconSlot = new("Frame", { BackgroundTransparency = 1, Size = O(76, 72) }, face)
+	local title = label(face, "", 30, { Position = O(76, 2), Size = O(374, 38), TextXAlignment = LEFT })
+	local sub = label(face, "", 20, { Position = O(78, 42), Size = O(374, 26), TextXAlignment = LEFT, TextColor3 = C.yellow })
+
+	-- falling code: columns of characters behind the HUD, bright at the bottom (the head) and fading up
+	local rainGui = new("ScreenGui", { Name = "ZooWeatherRain", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = -1, Enabled = false }, player:WaitForChild("PlayerGui"))
+	local drops = {}
+	for i = 1, 26 do
+		local l = new("TextLabel", { BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 20, TextTransparency = 0.3, AnchorPoint = Vector2.new(0.5, 1),
+			Size = O(22, 340), TextYAlignment = Enum.TextYAlignment.Bottom }, rainGui)
+		new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0) }, l)
+		drops[i] = { l = l, x = 0, y = 2, v = 0 }
+	end
+	local function resetDrop(d, w, anywhere)
+		local s = table.create(16, "")
+		for k = 1, 16 do
+			local n = math.random(#w.rain)
+			s[k] = w.rain:sub(n, n)
+		end
+		d.l.Text, d.l.TextColor3 = table.concat(s, "\n"), w.color
+		d.x, d.y, d.v = math.random(), anywhere and math.random() * 1.5 or 0, 0.25 + math.random() * 0.35
+	end
+
+	-- Lighting: remember each property's own value the first time a weather changes it, and tween back to it after
+	local saved = {}
+	local function applyLook(look)
+		local goals = {}
+		for inst, props in saved do goals[inst] = table.clone(props) end
+		for name, props in look or {} do
+			local inst = name == "Lighting" and Lighting or Lighting:FindFirstChild(name)
+			if inst then
+				saved[inst] = saved[inst] or {}
+				goals[inst] = goals[inst] or {}
+				for k, v in props do
+					if saved[inst][k] == nil then saved[inst][k] = inst[k] end
+					goals[inst][k] = v
+				end
+			end
+		end
+		for inst, g in goals do TweenService:Create(inst, TweenInfo.new(3, Enum.EasingStyle.Sine), g):Play() end
+	end
+
+	local weatherNow
+	local function refresh()
+		local w = Config.weather(Zoo:GetAttribute("Weather"))
+		applyLook(w and w.look)
+		banner.Visible = w ~= nil
+		rainGui.Enabled = w ~= nil and w.rain ~= nil and not reduced
+		if w then
+			banner.BackgroundColor3 = w.color:Lerp(BLACK, 0.5)
+			faceGrad.Color = ColorSequence.new(w.color:Lerp(WHITE, 0.4), w.color)
+			iconSlot:ClearAllChildren()
+			sticker(iconSlot, w.icon, 58, S(0.5, 0.5), true)
+			title.Text = w.name:upper() .. " WEATHER"
+			if w.rain then for _, d in drops do resetDrop(d, w, true) end end
+			toast(w.name:upper() .. " WEATHER! " .. w.mutation .. " mutations are way more likely!", w.color)
+		elseif weatherNow then
+			toast("The weather cleared up.")
+		end
+		weatherNow = w
+	end
+	Zoo:GetAttributeChangedSignal("Weather"):Connect(refresh)
+	refresh()
+
+	RunService.RenderStepped:Connect(function(dt)
+		if not rainGui.Enabled then return end
+		for _, d in drops do
+			d.y += d.v * dt
+			if d.y > 1.6 then resetDrop(d, weatherNow) end
+			d.l.Position = S(d.x, d.y)
+		end
+	end)
+	task.spawn(function()
+		while true do
+			if weatherNow then
+				local left = (Zoo:GetAttribute("WeatherEnds") or 0) - workspace:GetServerTimeNow()
+				sub.Text = string.format("%d%% %s mutation  ·  %s left", math.round(weatherNow.chance * 100), weatherNow.mutation, fmtTime(left))
+			end
+			toasts.Position = U(0.5, 0, 0, banner.Visible and banner.AbsoluteSize.Y + 14 or 4) -- toasts drop under the banner
+			task.wait(0.5)
+		end
+	end)
+end
 
 ----- plot signs: each plot's upgrade sign and draw easel show live info for whoever owns it -----
 do

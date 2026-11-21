@@ -27,13 +27,52 @@ Config.RARITIES = {
 	{ name = "Mythic", oneIn = 1024, rate = 10000, color = rgb(255, 90, 120) },
 }
 
--- Every drawing also rolls a mutation, separately from rarity. chances add up to 1; mult multiplies the animal's income.
+-- Every drawing also rolls a mutation, separately from rarity. mult multiplies the animal's income. Normal gets whatever
+-- chance the others leave (Config.mutationChances). A chance of 0 means only its weather can roll it. Append new ones at the end:
+-- saves store the index.
 Config.MUTATIONS = {
-	{ name = "Normal", chance = 0.9, mult = 1, color = rgb(235, 240, 248) },
+	{ name = "Normal", mult = 1, color = rgb(235, 240, 248) },
 	{ name = "Gold", chance = 0.06, mult = 3, color = rgb(255, 214, 40) },
 	{ name = "Diamond", chance = 0.03, mult = 6, color = rgb(110, 230, 255) },
 	{ name = "Rainbow", chance = 0.01, mult = 15, color = rgb(255, 90, 220) },
+	{ name = "Matrix", chance = 0, mult = 8, color = rgb(60, 255, 110) }, -- Matrix weather only
 }
+
+-- Weather: random server-wide events (ZooWeather.server.luau), one at a time with calm gaps between. While one is on,
+-- its mutation rolls at `chance` instead of its normal chance. Seconds are picked at random inside each range.
+-- look = Lighting properties every client tweens to: the key is "Lighting" or the name of a Lighting child.
+-- rain = characters that fall in columns over the screen (leave it out for no rain). icon = a Config.ICONS key.
+Config.WEATHER_GAP = { 360, 720 }
+Config.WEATHERS = {
+	{ name = "Matrix", mutation = "Matrix", chance = 0.1, weight = 1, duration = { 120, 180 }, icon = "cloud", color = rgb(60, 255, 110),
+		rain = "0123456789ABCDEFXZ$#%&*+=<>",
+		look = {
+			Lighting = { ClockTime = 21, Brightness = 1.5, Ambient = rgb(40, 100, 60), OutdoorAmbient = rgb(60, 150, 90) },
+			Atmosphere = { Density = 0.36, Color = rgb(30, 140, 70), Decay = rgb(0, 40, 15), Haze = 1.2, Glare = 0 },
+			CartoonGrade = { TintColor = rgb(170, 255, 190), Saturation = 0.1, Contrast = 0.2 },
+		},
+	},
+}
+
+function Config.weather(name: string?): any
+	for _, w in Config.WEATHERS do
+		if w.name == name then return w end
+	end
+	return nil
+end
+
+-- Chance of each mutation while `weather` is on (nil = clear skies). Used by the server roll, so the odds live in one place.
+function Config.mutationChances(weather: string?): { number }
+	local w = Config.weather(weather)
+	local out, rest = table.create(#Config.MUTATIONS, 0), 1
+	for i = 2, #Config.MUTATIONS do
+		local m = Config.MUTATIONS[i]
+		out[i] = if w and w.mutation == m.name then w.chance else m.chance
+		rest -= out[i]
+	end
+	out[1] = rest
+	return out
+end
 
 -- The Judge's Review: stars (1-5) from how good the drawing is, each with an income multiplier and a verdict
 Config.JUDGE = { "SIZE", "COLOURS", "DETAIL", "EYES", "NEAT" }
