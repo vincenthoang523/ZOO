@@ -1683,6 +1683,20 @@ do
 	end
 	board:GetAttributeChangedSignal("Top"):Connect(refresh)
 	refresh()
+
+	-- the board turns slowly (one turn per 36 s) so every plot round the plaza gets to read it; both faces show the list.
+	-- Spun here on each client so it is smooth and costs no network; server time keeps everyone's board at the same angle.
+	local art = World:WaitForChild("Art"):WaitForChild("Leaderboard")
+	local axis = CFrame.new(board.Position.X, 0, board.Position.Z)
+	local parts, homes = { board, header }, {}
+	for _, k in { "bulb", "screen", "red", "yellow", "gold", "wood" } do table.insert(parts, art:WaitForChild(k)) end -- the square stone base stays put
+	for i, p in parts do homes[i] = axis:ToObjectSpace(p.CFrame) end
+	local cfs = table.create(#parts)
+	RunService.Heartbeat:Connect(function()
+		local turn = axis * CFrame.Angles(0, workspace:GetServerTimeNow() * math.rad(10) % (2 * math.pi), 0)
+		for i, h in homes do cfs[i] = turn * h end
+		workspace:BulkMoveTo(parts, cfs, Enum.BulkMoveMode.FireCFrameChanged)
+	end)
 end
 
 ----- Animal race: pick an animal at the pad inside the gate, ride its cutout round the outskirts, the winner spins the prize wheel -----
