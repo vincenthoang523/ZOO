@@ -97,7 +97,7 @@ Config.CAP_START = 2
 Config.CAP_MAX = 12
 Config.MAX_INVENTORY = 50
 -- UserIds allowed to use admin chat commands such as /reset (the owner of the group that owns the game is always allowed)
-Config.ADMINS = { 213438244 }
+Config.ADMINS = { 213438244, 135018525 } -- 135018525 = exodtust (rank 254 in the group, so not the owner)
 Config.CREATE_COOLDOWN = 5
 Config.DAILY_COOLDOWN = 20 * 3600
 Config.DAILY_RESET = 48 * 3600
