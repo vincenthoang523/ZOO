@@ -4,10 +4,10 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-21
 
-- **Random weather and the Matrix mutation** (place v86):
+- **Random weather and the Matrix mutation** (place v87):
   - **Weather:** `ServerScriptService.ZooWeather` starts a random weather every 6 to 12 minutes, for 2 to 3 minutes. It is server-wide and shown to everyone through two attributes on `ReplicatedStorage.Zoo`: `Weather` and `WeatherEnds`. Weathers are data in `Config.WEATHERS`: mutation and its chance, duration, icon, colour, Lighting look and falling characters.
   - **Matrix weather:** the sky goes dark green, green code falls down the screen behind the HUD, and a banner at the top shows the weather, the boosted odds and a countdown. Toasts move down under the banner while it is up.
-  - **Matrix mutation:** new mutation 5, x8 income. It only rolls during Matrix weather, at 10% (Normal drops from 90% to 80%; Gold, Diamond and Rainbow are unchanged). A Matrix animal is drawn in shades of code green with a bright rim, glows green and gives off green sparks, in the zoo and on the roll screen.
+  - **Matrix mutation:** new mutation 5, x8 income. It only rolls during Matrix weather, at 10% (Normal drops from 90% to 80%; Gold, Diamond and Rainbow are unchanged). A Matrix animal keeps its own colours and gets a pulsing green aura round its outline, plus a green glow and sparks, in the zoo and on the roll screen. Its cutout is 25% bigger so the aura fits; the drawing stays the same size.
   - **Odds in one place:** `Config.mutationChances(weather)` gives the roll's mutation odds; Normal takes whatever the others leave.
   - **Testing:** admins can type `/weather` (or `/weather matrix`) to start a weather and `/weather off` to clear it.
 

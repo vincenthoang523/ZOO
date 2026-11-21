@@ -52,18 +52,6 @@ local MUT_PAL = { -- Normal, Gold, Diamond, Rainbow, Matrix (Config.MUTATIONS or
 		ColorSequenceKeypoint.new(0.6, hex("2BE000")), ColorSequenceKeypoint.new(0.8, hex("00BFFF")), ColorSequenceKeypoint.new(1, hex("CC00FF")) }),
 	{ hex("8CFFAE"), hex("00C853"), hex("006B2B") },
 }
--- Matrix mutation: a drawing turns into shades of code green with a glowing rim, keeping its lights and darks (roll screen and zoo)
-local function matrixTint(root)
-	for _, o in root:GetDescendants() do
-		if o:IsA("Frame") and o.BackgroundTransparency < 1 then
-			local c = o.BackgroundColor3
-			local l = 0.3 * c.R + 0.59 * c.G + 0.11 * c.B
-			o.BackgroundColor3 = if l > 0.97 then hex("B4FFC8") else Color3.new(0, 0.12 + 0.75 * l * l, 0.05 + 0.3 * l * l) -- white rim stays bright
-		elseif o:IsA("ImageLabel") then
-			o.ImageColor3 = hex("6BFF9A")
-		end
-	end
-end
 local STUD = "rbxassetid://3014551673" -- 2 x 2 studs per tile
 local ICON = Config.ICONS or {}
 
@@ -97,6 +85,29 @@ local function studs(o, tr, tile, r)
 		ImageTransparency = tr or 0.65, Size = S(1, 1) }, o)
 	if r then round(s, r) end
 	return s
+end
+
+-- Matrix mutation: a pulsing green aura round the animal; the drawing keeps its own colours (roll screen and zoo).
+-- The white rim Render.draw puts round every drawing (its ZIndex 1 frames) turns green, and wider copies of it in two
+-- CanvasGroups make the glow (a group fades as one, so overlapping copies don't stack into blotches). Each group is 1.25x
+-- the drawing so the glow isn't cut off at the drawing's edge; its inner frame lines up with the drawing again.
+local function matrixAura(drawing)
+	local layers = {}
+	for i, g in { { 6, 0.35 }, { 14, 0.7 } } do
+		local cg = new("CanvasGroup", { Name = "Aura", BackgroundTransparency = 1, Position = S(-0.125, -0.125), Size = S(1.25, 1.25), ZIndex = 0, GroupTransparency = g[2] }, drawing)
+		layers[i] = new("Frame", { BackgroundTransparency = 1, Position = S(0.1, 0.1), Size = S(0.8, 0.8) }, cg)
+		TweenService:Create(cg, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { GroupTransparency = g[2] + 0.25 }):Play()
+	end
+	for _, o in drawing:GetChildren() do
+		if o:IsA("Frame") and o.ZIndex == 1 then
+			o.BackgroundColor3 = hex("8CFFAE")
+			for i, g in { 6, 14 } do
+				local f = o:Clone()
+				f.BackgroundColor3, f.Position, f.Size = hex("3CFF6E"), o.Position - O(g, g), o.Size + O(2 * g, 2 * g)
+				f.Parent = layers[i]
+			end
+		end
+	end
 end
 
 -- idle life: rays spin, hero art floats, tags wiggle, best offers glint
@@ -1466,7 +1477,7 @@ do
 		nameL.Text = res.name
 		art:ClearAllChildren()
 		Render.draw(art, res.d, true, 2)
-		if minfo and minfo.name == "Matrix" then matrixTint(art) end
+		if minfo and minfo.name == "Matrix" then matrixAura(art.Drawing) end
 		ring.Color = WHITE
 		raysF.Visible = false
 		for _, b in bars do b.Size = U(0, 0, 1, 0) end
@@ -1540,8 +1551,12 @@ local animals = {}
 -- extra look for a mutation's animals walking in the zoo, by mutation name
 local MUT_FX = {
 	Matrix = function(part)
+		part.Size *= Vector3.new(1.25, 1.25, 1) -- room on the cutout for the aura; the drawing shrinks back to its own size
 		for _, sg in part:GetChildren() do
-			if sg:IsA("SurfaceGui") then matrixTint(sg) end
+			if sg:IsA("SurfaceGui") then
+				sg.Drawing.Size = S(0.8, 0.8)
+				matrixAura(sg.Drawing)
+			end
 		end
 		new("PointLight", { Color = hex("3CFF6E"), Range = 8, Brightness = 1 }, part)
 		new("ParticleEmitter", { Color = ColorSequence.new(hex("3CFF6E")), LightEmission = 1, Rate = 8, Lifetime = NumberRange.new(1, 1.6), Speed = NumberRange.new(2, 4),
