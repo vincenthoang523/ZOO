@@ -281,10 +281,10 @@ on("Create", function(player, s, raw)
 		roll -= chances[i]
 		if roll < 0 then rarity = i break end
 	end
-	-- roll 2: mutation, fixed odds
-	local mroll, mutation = rng:NextNumber(), 1
-	for i, m in Config.MUTATIONS do
-		mroll -= m.chance
+	-- roll 2: mutation; the current weather (ZooWeather) boosts its own mutation
+	local mChances, mroll, mutation = Config.mutationChances(Zoo:GetAttribute("Weather")), rng:NextNumber(), 1
+	for i, p in mChances do
+		mroll -= p
 		if mroll < 0 then mutation = i break end
 	end
 	-- the judge scores the drawing itself; income = base x stars x rarity x mutation
@@ -295,7 +295,7 @@ on("Create", function(player, s, raw)
 	local animal = { id = HttpService:GenerateGUID(false), d = design, r = rarity, m = mutation, st = stars, inc = income, eq = equippedCount(s) < capacity(s) }
 	table.insert(s.data.animals, animal)
 	Remotes.Rolled:FireClient(player, {
-		name = name, d = design, r = rarity, m = mutation, rChance = chances[rarity], mChance = Config.MUTATIONS[mutation].chance,
+		name = name, d = design, r = rarity, m = mutation, rChance = chances[rarity], mChance = mChances[mutation],
 		scores = scores, stars = stars, starMult = starMult, rarityMult = rarityMult, mutMult = mutMult, mult = mult, inc = income,
 	})
 	changed(player)
@@ -432,6 +432,7 @@ end
 
 ----- API for the other server scripts (ZooRace); never exposed to clients -----
 function Api.session(player) return sessions[player] end
+Api.isAdmin = isAdmin
 function Api.findAnimal(player, id)
 	local s = sessions[player]
 	return s and findAnimal(s, id)
