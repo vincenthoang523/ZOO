@@ -144,9 +144,10 @@ Config.LUCK_BOOST_MINUTES = 5
 -- CONSOLATION_SECONDS of income. Speeds are studs/second, ACCEL/BRAKE/COAST studs/second each second, TURN degrees/second.
 Config.RACE = {
 	LAPS = 2, MIN_PLAYERS = 2, MAX_PLAYERS = 8, COUNTDOWN = 5,
-	TOP_SPEED = 40, BOOST_SPEED = 62, BOOST_SECONDS = 2.5, MUD_SPEED = 16, REVERSE_SPEED = 10,
-	ACCEL = 13, BOOST_ACCEL = 45, BRAKE = 30, COAST = 9,
-	TURN = 75, STEER_LAG = 0.3, -- full lock turns 75 deg/s once moving; the wheel takes about STEER_LAG seconds to follow the stick
+	TOP_SPEED = 40, BOOST_SPEED = 62, BOOST_SECONDS = 2.5, MUD_SPEED = 16, REVERSE_SPEED = 18,
+	ACCEL = 24, BOOST_ACCEL = 45, BRAKE = 40, COAST = 9, -- ACCEL: about 2.5 s from standing to TOP_SPEED
+	TURN = 75, STEER_LAG = 0.12, -- full lock turns 75 deg/s once moving; the wheel takes about STEER_LAG seconds to follow the stick
+	SOLO_WAIT = 30, RESET_COOLDOWN = 3, -- seconds: alone in the queue this long starts a solo run (no wheel); time between resets
 	TIME_LIMIT = 150, AFTER_WINNER = 25, -- seconds: the whole race, and how long the rest get once someone has won
 	CONSOLATION_SECONDS = 120,
 	-- prize wheel slices, clockwise from the top. cash = seconds of the winner's income; luck/money = minutes of 2x

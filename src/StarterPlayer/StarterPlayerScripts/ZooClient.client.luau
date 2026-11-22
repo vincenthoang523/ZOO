@@ -2489,7 +2489,7 @@ do
 		if racing then
 			status.Text = "You're racing!"
 		elseif inQueue then
-			status.Text = race.phase == "racing" and "Queued for the next race" or string.format("In the queue: %d/%d\nNeeds %d to start", n, race.max, race.min)
+			status.Text = race.phase == "racing" and "Queued for the next race" or race.soloAt and "Nobody else yet:\nsolo run soon" or string.format("In the queue: %d/%d\nNeeds %d to start", n, race.max, race.min)
 		else
 			status.Text = n > 0 and string.format("%d waiting to race", n) or "Pick an animal and join!"
 		end
@@ -2540,13 +2540,18 @@ do
 	end)
 
 	-- race HUD: place and lap pill at the top, big pop-up words in the middle (countdown, GO!, BOOST!, your place)
-	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(440, 66), BackgroundTransparency = 1, Visible = false }, gui))
+	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(560, 66), BackgroundTransparency = 1, Visible = false }, gui))
 	local pill = round(new("Frame", { Size = S(1, 1), BackgroundColor3 = WHITE }, hudR), 18)
 	grad(pill, P.purple)
 	ink(pill, 4)
-	local placeL = label(pill, "", 36, { Position = O(18, 6), Size = O(200, 50), TextXAlignment = LEFT }, true)
+	local placeL = label(pill, "", 36, { Position = O(18, 6), Size = O(170, 50), TextXAlignment = LEFT }, true)
 	goldText(placeL)
-	local lapL = label(pill, "", 30, { Position = O(220, 8), Size = O(200, 46), TextXAlignment = RIGHT }, true)
+	local clockL = label(pill, "", 30, { Position = O(190, 8), Size = O(180, 46) }, true) -- time left in the race
+	local lapL = label(pill, "", 30, { Position = O(370, 8), Size = O(172, 46), TextXAlignment = RIGHT }, true)
+	local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	local function resetCar() Remotes:WaitForChild("RaceReset"):FireServer() end
+	button(hudR, touch and "RESET" or "RESET (R)", P.orange, O(190, 48), O(280, 102), resetCar, { text = 22 })
+	local hintL = label(hudR, "", 34, { Position = O(0, 136), Size = O(560, 44) }) -- WRONG WAY! and the stuck hint
 	local big = scaled(new("Frame", { Name = "RacePop", AnchorPoint = CENTER, Position = S(0.5, 0.36), Size = O(800, 190), BackgroundTransparency = 1, Visible = false, ZIndex = 30 }, gui))
 	local bigScale = new("UIScale", { Name = "Pop" }, big)
 	local bigL = label(big, "", 130, { Size = S(1, 1) }, true)
@@ -2559,43 +2564,61 @@ do
 		task.delay(hold or 0.8, function() if popId == id then big.Visible = false end end)
 	end
 	local camera = workspace.CurrentCamera
-	local function zoom(seconds) -- speed kick: widen the view, then ease back over the boost
-		TweenService:Create(camera, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { FieldOfView = 84 }):Play()
-		task.delay(0.15, function() TweenService:Create(camera, TweenInfo.new(seconds, Enum.EasingStyle.Sine), { FieldOfView = 70 }):Play() end)
-	end
+	local kick = 0 -- boost kick for the chase camera: widens the view for a moment, then eases back
+	local myDrive -- your own car while you race (set by drive below)
+	UserInputService.InputBegan:Connect(function(input, gp)
+		if not gp and myDrive and (input.KeyCode == Enum.KeyCode.R or input.KeyCode == Enum.KeyCode.ButtonY) then resetCar() end
+	end)
 
-	local shown
+	local shown, lastLap, lastSolo
 	Remotes.RaceState.OnClientEvent:Connect(function(s)
 		local before = race.phase
 		race = s
 		local racing = mine(s.racers)
 		hudR.Visible = racing and s.phase == "racing"
 		if racing and current == "Race" then close("Race") end
-		if racing and s.phase == "racing" and before == "countdown" then pop("GO!", C.cash) end
-		if not racing then shown = nil end
+		if racing and s.phase == "racing" and before == "countdown" and shown ~= 0 then pop("GO!", C.cash) end
+		if not racing then shown, lastLap = nil, nil end
+		if s.soloAt and s.soloAt ~= lastSolo and mine(s.queue) then
+			lastSolo = s.soloAt
+			toast(string.format("Nobody else yet - your solo run starts in %ds", math.max(1, math.ceil(s.soloAt - workspace:GetServerTimeNow()))), C.yellow)
+		end
 		if current == "Race" then refreshers.Race() end
 	end)
 	RunService.Heartbeat:Connect(function()
-		if race.phase ~= "countdown" or not mine(race.racers) then return end
+		if not mine(race.racers) then return end
 		local left = math.ceil(race.ends - workspace:GetServerTimeNow())
-		if left >= 1 and left ~= shown then
-			shown = left
-			pop(tostring(left), C.yellow, 0.9)
+		if race.phase == "racing" then
+			local s = math.max(0, left)
+			clockL.Text = string.format("%d:%02d", s // 60, s % 60)
+			clockL.TextColor3 = s <= 15 and hex("FF5A5A") or WHITE
+		elseif race.phase == "countdown" then
+			if left >= 1 and left ~= shown then
+				shown = left
+				pop(tostring(left), C.yellow, 0.9)
+			elseif left < 1 and shown ~= 0 then -- GO! right on time, not when the server's next broadcast lands
+				shown = 0
+				pop("GO!", C.cash)
+			end
 		end
 	end)
 	Remotes.RaceInfo.OnClientEvent:Connect(function(i)
 		if i.place then
 			placeL.Text = ordinal(i.place) .. " / " .. i.count
 			lapL.Text = "LAP " .. i.lap .. "/" .. i.laps
+			if lastLap and i.lap > lastLap then pop(i.lap == i.laps and "FINAL LAP!" or "LAP " .. i.lap, C.yellow, 1.2) end
+			lastLap = i.lap
 		end
 		if i.boost then
 			pop("BOOST!", hex("3DF5FF"), 0.6)
-			zoom(i.boost)
+			kick = 1
 		end
+		if i.respawn and myDrive then myDrive.snap(i.respawn) end
 		if i.mud then toast("Mud! Slowed down...", hex("D9A066")) end
 		if i.finished then
 			hudR.Visible = false
 			pop(ordinal(i.finished) .. " PLACE!", i.finished == 1 and C.yellow or WHITE, 2)
+			if i.time then toast(string.format("Your time: %d:%05.2f", i.time // 60, i.time % 60)) end
 		end
 	end)
 
@@ -2637,7 +2660,7 @@ do
 	end)
 
 	-- the cutouts racers ride (built by the server, drawn here), hopping while they run; boost rings turn slowly
-	local mounts, rings = {}, {}
+	local mounts, rings, lean = {}, {}, {}
 	local function addMount(part)
 		if mounts[part] then return end
 		local ok, design = pcall(HttpService.JSONDecode, HttpService, part:GetAttribute("Design") or "")
@@ -2652,23 +2675,62 @@ do
 	end
 
 	-- driving your own car: the VehicleSeat reads WASD, arrows, a gamepad or the thumbstick as throttle and steer.
-	-- It pulls away slowly and builds up to the server's "Top" speed, coasts down when you let go, and steers like a
-	-- car: the wheel follows the stick with a lag and you can't turn on the spot. Bumping into something costs speed.
+	-- It gets going quickly and builds up to the server's "Top" speed, coasts down when you let go, and steers like a
+	-- car: the wheel follows the stick with a short lag and you can't turn on the spot. Bumping into something costs speed.
+	-- A chase camera sits behind the car and swings round with it; the view widens with speed and on a boost.
 	local function drive(car)
 		if car:GetAttribute("Owner") ~= player.UserId then return end
-		local body, seat = car:WaitForChild("Body", 5), car:WaitForChild("Seat", 5)
+		local body, seat, cut = car:WaitForChild("Body", 5), car:WaitForChild("Seat", 5), car:WaitForChild("RaceMount", 5)
 		local lv, ao = body and body:WaitForChild("LinearVelocity", 5), body and body:WaitForChild("AlignOrientation", 5)
 		if not (lv and ao and seat) then return end
 		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end
 		local look = body.CFrame.LookVector
 		local yaw = math.atan2(-look.X, -look.Z)
-		local speed, steer = 0, 0
+		local speed, steer, stuckT, wrongT = 0, 0, 0, 0
+		local camYaw, camPos = yaw, nil
+		local me = {}
+		function me.snap(cf) -- the server put us back on the track: face along it, standing still
+			car:PivotTo(cf)
+			body.AssemblyLinearVelocity = Vector3.zero
+			local l = cf.LookVector
+			yaw, speed, steer, stuckT, wrongT = math.atan2(-l.X, -l.Z), 0, 0, 0, 0
+			camYaw, camPos = yaw, nil
+			ao.CFrame, lv.PlaneVelocity = CFrame.Angles(0, yaw, 0), Vector2.zero
+		end
+		myDrive = me
 		local conn
+		RunService:UnbindFromRenderStep("RaceCam")
+		RunService:BindToRenderStep("RaceCam", Enum.RenderPriority.Camera.Value + 1, function(dt)
+			if not car.Parent then return end
+			camera.CameraType = Enum.CameraType.Scriptable
+			local p = body.Position
+			camYaw += ((yaw - camYaw + math.pi) % (2 * math.pi) - math.pi) * (1 - math.exp(-dt * 5))
+			local f = CFrame.Angles(0, camYaw, 0).LookVector
+			local want = p - f * (11 + math.max(speed, 0) * 0.06) + Vector3.new(0, 6, 0)
+			camPos = camPos and camPos:Lerp(want, 1 - math.exp(-dt * 12)) or want
+			camera.CFrame = CFrame.lookAt(camPos, p + f * 12 + Vector3.new(0, 2.5, 0))
+			kick = math.max(0, kick - dt / 1.5)
+			local fov = 70 + 12 * math.clamp(speed / R.BOOST_SPEED, 0, 1) + 10 * kick
+			camera.FieldOfView += (fov - camera.FieldOfView) * (1 - math.exp(-dt * 6))
+		end)
 		conn = RunService.Heartbeat:Connect(function(dt)
 			if not car.Parent then
 				conn:Disconnect()
+				RunService:UnbindFromRenderStep("RaceCam")
+				if myDrive == me then myDrive = nil end
+				lean[cut or 0], hintL.Text = nil, ""
 				if hum and hum.Parent then hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true) end
+				local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+				if h then camera.CameraSubject = h end
+				if h and h.Health > 0 then -- race over: back beside the pad, ready for the next one
+					task.delay(0.1, function()
+						h.Sit = false
+						local spot = RL.RETURN + Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
+						player.Character:PivotTo(CFrame.lookAt(spot, Vector3.new(RL.PAD.x, spot.Y, RL.PAD.z)))
+					end)
+				end
+				camera.CameraType, camera.FieldOfView = Enum.CameraType.Custom, 70
 				return
 			end
 			if body.Anchored then return end -- still on the grid
@@ -2680,9 +2742,11 @@ do
 			steer += (input - steer) * math.min(1, dt / R.STEER_LAG)
 			if speed > top then
 				speed = math.max(top, speed - R.BRAKE * dt) -- mud, or a boost running out
+			elseif throttle > 0 and speed < 0 then
+				speed = math.min(0, speed + R.BRAKE * dt) -- rolling backwards: W brakes first
 			elseif throttle > 0 then
 				local a = top > R.TOP_SPEED and R.BOOST_ACCEL or R.ACCEL
-				speed = math.min(top, speed + a * dt * (1 - 0.6 * math.max(speed, 0) / top)) -- strong pull at first, easing off near the top
+				speed = math.min(top, speed + a * dt * (1 - 0.6 * speed / math.max(top, 1))) -- strong pull at first, easing off near the top
 			elseif throttle < 0 then
 				speed = math.max(-R.REVERSE_SPEED, speed - R.BRAKE * dt)
 			else
@@ -2692,11 +2756,25 @@ do
 			local actual = body.AssemblyLinearVelocity:Dot(fwd)
 			if speed > 6 and actual < speed - 8 then speed = math.max(actual + 3, 0) end -- hit something: lose the speed
 			-- no turning on the spot: full turn rate once rolling, and only a little when crawling (enough to nose out of a crash)
-			local grip = math.clamp(math.abs(speed) / 14, throttle ~= 0 and 0.3 or 0, 1)
-			yaw -= steer * math.rad(R.TURN) * grip * dt * (speed >= 0 and 1 or -1)
+			local grip = math.clamp(math.abs(speed) / 14, throttle < 0 and 0.8 or throttle > 0 and 0.3 or 0, 1) -- reverse steers well at once, to back out of a crash
+			-- a little less lock at boost speed, so a boost doesn't throw you into the wall
+			local turn = R.TURN * (1 - 0.25 * math.clamp((speed - R.TOP_SPEED) / (R.BOOST_SPEED - R.TOP_SPEED), 0, 1))
+			yaw -= steer * math.rad(turn) * grip * dt * (speed >= 0 and 1 or -1)
 			local rot = CFrame.Angles(0, yaw, 0)
 			ao.CFrame = rot
 			lv.PlaneVelocity = Vector2.new(rot.LookVector.X, rot.LookVector.Z) * speed
+			-- the cutout leans into the turn; warnings for driving the wrong way round or being pinned against something
+			lean[cut or 0] = steer * 0.14 * math.clamp(speed / R.TOP_SPEED, 0, 1)
+			local facing = math.cos(yaw - math.rad(RL.angle(body.Position))) -- 1 = along the race, -1 = backwards
+			wrongT = (facing < -0.2 and speed > 5) and wrongT + dt or 0
+			stuckT = (throttle ~= 0 and math.abs(actual) < 2) and stuckT + dt or 0
+			if wrongT > 1 then
+				hintL.Text, hintL.TextColor3 = "WRONG WAY!", hex("FF5A5A")
+			elseif stuckT > 2.5 then
+				hintL.Text, hintL.TextColor3 = touch and "Stuck? Tap RESET" or "Stuck? Press R to reset", C.yellow
+			else
+				hintL.Text = ""
+			end
 		end)
 	end
 	local function addRing(m)
@@ -2722,7 +2800,7 @@ do
 			if hrp then
 				local moving = hrp.AssemblyLinearVelocity.Magnitude > 3
 				local s = math.sin(t * 9 + m.seed)
-				m.weld.C0 = m.base * CFrame.new(0, moving and math.abs(s) * 0.35 or 0, 0) * CFrame.Angles(0, 0, moving and s * 0.04 or 0)
+				m.weld.C0 = m.base * CFrame.new(0, moving and math.abs(s) * 0.35 or 0, 0) * CFrame.Angles(lean[part] or 0, 0, moving and s * 0.04 or 0)
 			end
 		end
 		local turn = CFrame.Angles(0, 0, t * 0.8)
