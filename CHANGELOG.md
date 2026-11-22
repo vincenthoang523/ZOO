@@ -4,6 +4,11 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-22
 
+- **Roblox policy fixes** (repo only, not in Studio yet). Robux luck items (2x Luck pass, Luck Boost, Starter Pack) count as "probability modifiers" under Roblox's [paid random items policy](https://create.roblox.com/docs/production/monetization/paid-random-items).
+  - **Odds window:** shows every rarity with your odds now and with 2x luck, and every mutation's odds (they follow the live weather). The numbers have 4 significant digits and the window has Roblox's rounding note. It updates live while open. There are now ODDS buttons on the Luck Boost and Starter Pack cards too.
+  - **Region check:** `PolicyService.ArePaidRandomItemsRestricted` players see N/A on those three items and can't open their purchase prompts.
+  - **/take pass** only removes a pass an admin gave. It no longer removes a pass the player bought with Robux, and older saves where it did are fixed when the player next joins.
+
 - **Admin Panel** (place v95; a red hammer ADMIN button under the left menu, admins only). Replaces typing commands; `/give`, `/take`, `/weather` and `/reset` still work as shortcuts.
   - **Security:** every button calls one RemoteFunction, `Remotes.Admin` (created by `ZooAdmin`). The server re-checks `isAdmin` on every call, rate-limits it, validates every argument and never trusts the client. The `Admin` player attribute only decides whether the button shows. Announcement and countdown text goes through Roblox's text filter.
   - **Players:** everyone in the server with avatar, cash, income and zoo size. GIVE (picks them for the Give tab), GO TO, BRING and KICK (press twice; admins can't be kicked).

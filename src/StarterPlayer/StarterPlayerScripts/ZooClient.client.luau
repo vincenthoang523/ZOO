@@ -15,6 +15,7 @@ local Lighting = game:GetService("Lighting")
 local GuiService = game:GetService("GuiService")
 local AvatarEditorService = game:GetService("AvatarEditorService")
 local GroupService = game:GetService("GroupService")
+local PolicyService = game:GetService("PolicyService")
 
 local player = Players.LocalPlayer
 local Zoo = ReplicatedStorage:WaitForChild("Zoo")
@@ -402,9 +403,26 @@ Remotes.State.OnClientEvent:Connect(function(s)
 end)
 
 ----- buying -----
+-- Robux items that change drawing odds count as paid random items: players whose region restricts those can't buy them.
+-- Until PolicyService answers, assume restricted.
+local LUCK_ITEMS = { Luck2x = true, LuckBoost = true, StarterPack = true }
+local randomRestricted, policyKnown = true, false
+task.spawn(function()
+	for attempt = 1, 5 do
+		local ok, info = pcall(PolicyService.GetPolicyInfoForPlayerAsync, PolicyService, player)
+		if ok and info then
+			randomRestricted, policyKnown = info.ArePaidRandomItemsRestricted == true, true
+			return
+		end
+		task.wait(attempt * 2)
+	end
+end)
 local function buy(kind, key)
 	local id = (kind == "pass" and Config.PASSES or Config.PRODUCTS)[key]
 	if not id or id == 0 then return toast("Coming soon!") end
+	if LUCK_ITEMS[key] and randomRestricted then
+		return toast(policyKnown and "Sorry, this item is unavailable in your region" or "Checking if this item is available, try again in a moment")
+	end
 	if kind == "pass" then MarketplaceService:PromptGamePassPurchase(player, id) else MarketplaceService:PromptProductPurchase(player, id) end
 end
 local passButtons = {}
@@ -421,6 +439,8 @@ local function priceButton(parent, kind, key, size, pos, ts, prefix)
 	if id and id ~= 0 then
 		task.spawn(function()
 			local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, id, kind == "pass" and Enum.InfoType.GamePass or Enum.InfoType.Product)
+			while LUCK_ITEMS[key] and not policyKnown and b.Parent do task.wait(1) end
+			if LUCK_ITEMS[key] and randomRestricted then return setLabel(b, "N/A") end
 			setLabel(b, ok and info and info.PriceInRobux and tostring(info.PriceInRobux) or "BUY")
 		end)
 	else
@@ -510,25 +530,56 @@ ProximityPromptService.PromptTriggered:Connect(function(prompt)
 end)
 
 ----- Odds -----
+-- Roblox's paid random items policy: Robux luck items change these odds, so every outcome is listed with its real
+-- percentage (4 significant digits, summing to 100%), the 2x column shows what a luck item would change, and the
+-- mutation odds follow the live weather.
+local function pctText(p)
+	local v = p * 100
+	if v <= 0 then return "0%" end
+	if v >= 99.995 then return "100%" end
+	local digits = math.max(0, 3 - math.floor(math.log10(v)))
+	return (string.format("%." .. digits .. "f", v):gsub("%.?0+$", "")) .. "%"
+end
 do
-	local body = window("Odds", "Odds", "rainbowclover", 560, 500)
-	local head = label(body, "", 24, { Position = O(0, 0), Size = O(520, 32) })
-	local rows = {}
+	local body = window("Odds", "Odds", "rainbowclover", 800, 600)
+	local head = label(body, "", 24, { Position = O(0, 0), Size = O(760, 32) })
+	local function columns(y, list)
+		for _, c in list do label(body, c[1], 18, { Position = O(c[2], y), Size = O(c[3], 24), TextColor3 = C.yellow }) end
+	end
+	columns(40, { { "RARITY", 0, 150 }, { "NOW", 150, 110 }, { "WITH 2x LUCK", 260, 130 }, { "INCOME", 390, 100 }, { "MUTATION", 516, 130 }, { "NOW", 646, 110 } })
+	local now, boosted, mrows = {}, {}, {}
 	for i, info in Config.RARITIES do
-		local f, face = card(body, RARITY_PAL[i], O(520, 56), O(0, 40 + (i - 1) * 64), 12)
-		label(face, info.name:upper(), 24, { Position = O(16, 0), Size = U(0, 220, 1, 0), TextXAlignment = LEFT })
-		rows[i] = label(face, "", 24, { Position = O(220, 0), Size = U(0, 150, 1, 0), TextColor3 = C.yellow })
-		label(face, "$" .. Config.format(info.rate) .. "/s", 22, { Position = O(370, 0), Size = U(0, 136, 1, 0), TextXAlignment = RIGHT, TextColor3 = C.cash })
+		local f, face = card(body, RARITY_PAL[i], O(496, 56), O(0, 72 + (i - 1) * 64), 12)
+		label(face, info.name:upper(), 22, { Position = O(12, 0), Size = U(0, 140, 1, 0), TextXAlignment = LEFT })
+		now[i] = label(face, "", 22, { Position = O(150, 0), Size = U(0, 110, 1, 0), TextColor3 = C.yellow })
+		boosted[i] = label(face, "", 22, { Position = O(260, 0), Size = U(0, 130, 1, 0), TextColor3 = C.cash })
+		label(face, "$" .. Config.format(info.rate) .. "/s", 20, { Position = O(390, 0), Size = U(0, 96, 1, 0), TextXAlignment = RIGHT, TextColor3 = C.cash })
 		f.Name = info.name
 	end
+	for i, m in Config.MUTATIONS do
+		local f, face = card(body, MUT_PAL[i], O(244, 56), O(516, 72 + (i - 1) * 64), 12)
+		label(face, m.name:upper() .. " x" .. m.mult, 20, { Position = O(12, 0), Size = U(0, 130, 1, 0), TextXAlignment = LEFT })
+		mrows[i] = label(face, "", 22, { Position = O(130, 0), Size = U(0, 104, 1, 0), TextColor3 = C.yellow })
+		f.Name = m.name
+	end
+	local weatherNote = label(body, "", 18, { Position = O(516, 72 + #Config.MUTATIONS * 64), Size = O(244, 48), TextWrapped = true })
+	label(body, "Every drawing rolls a rarity and a mutation separately. Probabilities are rounded; total of displayed individual probabilities may not equal 100%.", 16,
+		{ Position = O(0, 470), Size = O(760, 48), TextWrapped = true })
 	refreshers.Odds = function()
 		local luck = player:GetAttribute("Luck") or 1
 		head.Text = "Your odds for each drawing at <font color=\"#FFE600\">" .. luck .. "x</font> luck"
+		local b = Config.chances(luck * 2)
 		for i, p in Config.chances(luck) do
-			local pct = p * 100
-			rows[i].Text = (pct >= 1 and string.format("%.1f", pct) or string.format("%.3f", pct)) .. "%"
+			now[i].Text = pctText(p)
+			boosted[i].Text = pctText(b[i])
 		end
+		local weather = Zoo:GetAttribute("Weather")
+		for i, p in Config.mutationChances(weather) do mrows[i].Text = pctText(p) end
+		weatherNote.Text = weather and (weather .. " weather is on right now") or "Weather can boost a mutation while it lasts"
 	end
+	local function live() if current == "Odds" then refreshers.Odds() end end
+	player:GetAttributeChangedSignal("Luck"):Connect(live)
+	Zoo:GetAttributeChangedSignal("Weather"):Connect(live)
 end
 
 ----- Upgrades -----
@@ -631,7 +682,8 @@ do
 	rays(boost, 210, O(96, 76), WHITE)
 	sticker(boost, "luck", 120, O(96, 76), true)
 	label(boost, "2x Luck Boost", 38, { Position = O(190, 18), Size = O(380, 48), TextXAlignment = LEFT })
-	label(boost, Config.LUCK_BOOST_MINUTES .. " minutes of 2x luck. Buy more to stack the time!", 20, { Position = O(192, 74), Size = O(380, 52), TextXAlignment = LEFT, TextWrapped = true })
+	label(boost, Config.LUCK_BOOST_MINUTES .. " minutes of 2x luck. Buy more to stack the time!", 20, { Position = O(192, 74), Size = O(260, 52), TextXAlignment = LEFT, TextWrapped = true })
+	button(boost, "ODDS", P.blue, O(110, 60), O(515, 76), function() open("Odds") end, { text = 24 })
 	priceButton(boost, "product", "LuckBoost", O(230, 70), O(690, 76), 32)
 	y += 176
 
@@ -641,7 +693,8 @@ do
 	rays(pack, 210, O(96, 76), C.yellow)
 	sticker(pack, "chest", 124, O(96, 76), true)
 	label(pack, "Starter Pack", 38, { Position = O(190, 18), Size = O(380, 48), TextXAlignment = LEFT })
-	label(pack, "$" .. Config.format(Config.STARTER_PACK.cash) .. " cash + " .. Config.STARTER_PACK.luckMin .. " min of 2x luck", 20, { Position = O(192, 74), Size = O(380, 30), TextXAlignment = LEFT })
+	label(pack, "$" .. Config.format(Config.STARTER_PACK.cash) .. " cash + " .. Config.STARTER_PACK.luckMin .. " min of 2x luck", 20, { Position = O(192, 74), Size = O(260, 52), TextXAlignment = LEFT, TextWrapped = true })
+	button(pack, "ODDS", P.blue, O(110, 60), O(515, 76), function() open("Odds") end, { text = 24 })
 	priceButton(pack, "product", "StarterPack", O(230, 70), O(690, 76), 32)
 	y += 176
 
