@@ -2677,7 +2677,8 @@ do
 	-- driving your own car: the VehicleSeat reads WASD, arrows, a gamepad or the thumbstick as throttle and steer.
 	-- It gets going quickly and builds up to the server's "Top" speed, coasts down when you let go, and steers like a
 	-- car: the wheel follows the stick with a short lag and you can't turn on the spot. Bumping into something costs speed.
-	-- The camera stays the normal free camera (drag, rotate, zoom); the view widens with speed and on a boost.
+	-- The camera is Roblox's vehicle camera: drag to look around and zoom, and it swings back behind the car as you drive.
+	-- The view widens with speed and on a boost.
 	local function drive(car)
 		if car:GetAttribute("Owner") ~= player.UserId then return end
 		local body, seat, cut = car:WaitForChild("Body", 5), car:WaitForChild("Seat", 5), car:WaitForChild("RaceMount", 5)
@@ -2701,9 +2702,6 @@ do
 		RunService:UnbindFromRenderStep("RaceCam")
 		RunService:BindToRenderStep("RaceCam", Enum.RenderPriority.Camera.Value + 1, function(dt)
 			if not car.Parent then return end
-			-- follow the car's body, not the seat: sitting makes the seat the subject, and the seat hops with the cutout.
-			-- Swapped after the camera's own update, so the vehicle camera never runs a frame with a non-seat subject.
-			if camera.CameraSubject ~= body then camera.CameraSubject = body end
 			kick = math.max(0, kick - dt / 1.5)
 			local fov = 70 + 12 * math.clamp(speed / R.BOOST_SPEED, 0, 1) + 10 * kick
 			camera.FieldOfView += (fov - camera.FieldOfView) * (1 - math.exp(-dt * 6))

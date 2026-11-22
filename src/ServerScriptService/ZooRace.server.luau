@@ -169,14 +169,15 @@ local function mount(player, animal, cf)
 	mw.Name, mw.Part0, mw.Part1, mw.C0 = "MountWeld", body, cut, body.CFrame:ToObjectSpace(cut.CFrame)
 	mw.Parent = cut
 	cut.Parent = car
-	-- the seat rides on the cutout's back, so the rider hops with it; VehicleSeat gives the client throttle and steer
+	-- the seat sits on the cutout's back but is welded to the body, so it doesn't hop: the camera follows the seat.
+	-- VehicleSeat gives the client throttle and steer
 	local seat = Instance.new("VehicleSeat")
 	seat.Name, seat.Size, seat.Transparency, seat.Massless = "Seat", Vector3.new(2, 0.4, 2), 1, true
 	seat.CanCollide, seat.CanQuery, seat.CanTouch = false, false, false
 	seat.MaxSpeed, seat.Torque, seat.TurnSpeed, seat.HeadsUpDisplay = 0, 0, 0, false
 	seat.CFrame = cf * CFrame.new(0, h - 0.15, 0.4)
 	local sw = Instance.new("WeldConstraint")
-	sw.Part0, sw.Part1 = cut, seat
+	sw.Part0, sw.Part1 = body, seat
 	sw.Parent = seat
 	seat.Parent = car
 	-- the client drives these two: speed along the ground (gravity stays free) and the heading, kept upright
