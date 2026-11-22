@@ -165,7 +165,7 @@ local function ownsPass(player, id)
 end
 
 local function onJoin(player)
-	local s = { data = newData(), loaded = false, passes = {}, lastCreate = 0, lastCall = 0 }
+	local s = { data = newData(), loaded = false, passes = {}, bought = {}, lastCreate = 0, lastCall = 0 } -- bought: passes paid for with Robux; an admin's /take pass can never remove these
 	for attempt = 1, 3 do
 		local ok, saved = pcall(store.GetAsync, store, tostring(player.UserId))
 		if ok then
@@ -182,8 +182,8 @@ local function onJoin(player)
 	-- false = the client plays the intro; it only becomes true when the client reports the intro finished
 	player:SetAttribute("IntroDone", s.data.introDone)
 	for name, id in Config.PASSES do
-		local grant = s.data.passGrants[name] -- set by an admin's /give pass or /take pass (ZooAdmin), for testing
-		if grant == nil then s.passes[name] = ownsPass(player, id) else s.passes[name] = grant end
+		s.bought[name] = ownsPass(player, id)
+		s.passes[name] = s.bought[name] or s.data.passGrants[name] == true -- passGrants: an admin's /give pass (ZooAdmin), for testing
 	end
 	-- offline earnings: pay up to OFFLINE_HOURS of income for the time away; the client popup only reports it
 	if s.loaded and s.data.lastSeen > 0 then
@@ -413,7 +413,7 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, id, b
 	local s = sessions[player]
 	if not (bought and s) then return end
 	for name, passId in Config.PASSES do
-		if passId == id then s.passes[name], s.data.passGrants[name] = true, nil end
+		if passId == id then s.passes[name], s.bought[name], s.data.passGrants[name] = true, true, nil end
 	end
 	changed(player)
 end)

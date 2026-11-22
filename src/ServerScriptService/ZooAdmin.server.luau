@@ -66,7 +66,8 @@ local function setPasses(target, s, arg, owned)
 		for name in Config.PASSES do table.insert(all, name:lower()) end
 		return false, "Pass names: " .. table.concat(all, ", ") .. ", all"
 	end
-	for _, name in list do s.passes[name], s.data.passGrants[name] = owned, owned end
+	-- taking only undoes an admin grant: a pass the player bought with Robux stays theirs
+	for _, name in list do s.passes[name], s.data.passGrants[name] = owned or s.bought[name] == true, owned or nil end
 	Api.changed(target)
 	return true, table.concat(list, ", ")
 end
