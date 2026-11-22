@@ -2,6 +2,19 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-22
+
+- **Admin Panel** (place v95; a red hammer ADMIN button under the left menu, admins only). Replaces typing commands; `/give`, `/take`, `/weather` and `/reset` still work as shortcuts.
+  - **Security:** every button calls one RemoteFunction, `Remotes.Admin` (created by `ZooAdmin`). The server re-checks `isAdmin` on every call, rate-limits it, validates every argument and never trusts the client. The `Admin` player attribute only decides whether the button shows. Announcement and countdown text goes through Roblox's text filter.
+  - **Players:** everyone in the server with avatar, cash, income and zoo size. GIVE (picks them for the Give tab), GO TO, BRING and KICK (press twice; admins can't be kicked).
+  - **Give:** to yourself or the picked player: cash (K/M/B/T, or TAKE), minutes of 2x luck or 2x money, an animal (rarity, mutation, stars), and VIP / Money2x / Luck2x test flags. Both the admin and the player get a toast.
+  - **Events:** a tile per weather (Matrix) plus two new server-wide events, 2x LUCK and 2x MONEY for everyone (`Config.BOOST_EVENTS`, applied in ZooServer's `luck()` and `rate()`). Duration in seconds, START and STOP. Running events show a strip with a countdown under the weather banner for every player.
+  - **Announce:** a message (150 characters) that pops up as a big card for every player with the admin's Roblox headshot and name, for 5-30 seconds.
+  - **Timer:** a titled countdown strip every player sees, which says NOW! at zero.
+  - **Server:** players, uptime and place version; random weather on/off; stop all events; respawn everyone.
+  - The weather banner, the event strips and the countdown now stack in one column at the top (`topStack`); toasts drop under it. `window()` takes an optional rim colour (the panel is red).
+  - Icons: hammer, gear and newspaper from the FOLK pack (`Config.ICONS`).
+
 ## 2026-11-21
 
 - **Admin give commands** (place v90): `ServerScriptService.ZooAdmin` adds two chat commands for testing. Only admins can use them (`Config.ADMINS` or the owner of the group that owns the game); for anyone else they do nothing. They run on the server from chat, so there is no remote a client could fire.

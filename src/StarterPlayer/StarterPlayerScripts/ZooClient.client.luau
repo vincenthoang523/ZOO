@@ -353,7 +353,8 @@ end
 local function close(name)
 	if current == name then open(name) end
 end
-local function window(name, title, iconKey, w, h)
+local function window(name, title, iconKey, w, h, rim) -- rim: { top, middle, bottom } colours of the frame (default blue)
+	rim = rim or { hex("5CE6FF"), hex("0A86F0"), hex("0743B0") }
 	local root = scaled(new("Frame", { Name = name, AnchorPoint = CENTER, Position = S(0.5, 0.53), Size = O(w, h), BackgroundTransparency = 1, Visible = false, ZIndex = 10 }, gui))
 	local stage = new("Frame", { Name = "Stage", BackgroundTransparency = 1, Size = S(1, 1) }, root)
 	local pop = new("UIScale", { Name = "Pop" }, stage) -- separate from the fit scale, so a resize mid-pop can't leave a wrong size
@@ -362,8 +363,8 @@ local function window(name, title, iconKey, w, h)
 	-- rim: bright blue frame whose top is a header band (gloss strip, shine streaks, faint paws); the content sits in a dark recessed well
 	local sheet = round(new("Frame", { Name = "Sheet", Size = S(1, 1), BackgroundColor3 = WHITE }, stage), 16)
 	ink(sheet, 5)
-	new("UIGradient", { Rotation = 90, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, hex("5CE6FF")), ColorSequenceKeypoint.new(55 / h, hex("0A86F0")),
-		ColorSequenceKeypoint.new(1, hex("0743B0")) }) }, sheet)
+	new("UIGradient", { Rotation = 90, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, rim[1]), ColorSequenceKeypoint.new(55 / h, rim[2]),
+		ColorSequenceKeypoint.new(1, rim[3]) }) }, sheet)
 	studs(sheet, 0.72, O(50, 46), 15)
 	round(new("Frame", { Name = "Gloss", BackgroundColor3 = WHITE, BackgroundTransparency = 0.55, Position = O(18, 5), Size = U(1, -36, 0, 7) }, sheet), 4)
 	for i, x in { 250, 228 } do
@@ -1627,9 +1628,120 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
+----- server events everyone sees: admin boost events and countdowns as strips under the weather banner, and admin announcements -----
+-- topStack holds the weather banner and these strips in one column at the top; toasts drop under whatever it shows
+local topStack = scaled(new("Frame", { Name = "TopStack", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 6), Size = O(560, 320), BackgroundTransparency = 1 }, hud))
+local topLayout = new("UIListLayout", { Padding = UDim.new(0, 6), HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }, topStack)
+do
+	local function strip(order, icon, col)
+		local f = new("Frame", { Name = "Strip", Size = O(460, 56), BackgroundColor3 = col:Lerp(BLACK, 0.55), Visible = false, LayoutOrder = order }, topStack)
+		round(f, 14)
+		ink(f, 4)
+		local face = round(new("Frame", { Name = "Face", Size = U(1, 0, 1, -5) }, f), 13)
+		grad(face, { col:Lerp(WHITE, 0.35), col })
+		studs(face, 0.7, nil, 13)
+		sticker(face, icon, 44, O(32, 25), true)
+		local title = label(face, "", 24, { Position = O(62, 0), Size = U(1, -170, 1, 0), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+		local time = label(face, "", 26, { Position = U(1, -112, 0, 0), Size = U(0, 100, 1, 0), TextXAlignment = RIGHT, TextColor3 = C.yellow })
+		local pop = new("UIScale", { Name = "Pop" }, f)
+		return { f = f, title = title, time = time, pop = pop }
+	end
+	local function show(s, on)
+		if on == s.f.Visible then return end
+		s.f.Visible = on
+		if on then
+			s.pop.Scale = 0.6
+			TweenService:Create(s.pop, BACK, { Scale = 1 }):Play()
+		end
+	end
+	local strips = {}
+	for i, e in Config.BOOST_EVENTS do
+		local s = strip(1 + i, e.icon, e.color)
+		s.title.Text = e.text .. " FOR EVERYONE"
+		strips[i] = s
+		Zoo:GetAttributeChangedSignal(e.attr):Connect(function()
+			local left = (Zoo:GetAttribute(e.attr) or 0) - workspace:GetServerTimeNow()
+			if left > 1 then toast("ADMIN EVENT! " .. e.text .. " for everyone for " .. fmtTime(left) .. "!", e.color) end
+		end)
+	end
+	local timer = strip(10, "clock", hex("FF4FD8"))
+	local timerDone = true
+	task.spawn(function()
+		while true do
+			local now = workspace:GetServerTimeNow()
+			for i, e in Config.BOOST_EVENTS do
+				local left = (Zoo:GetAttribute(e.attr) or 0) - now
+				show(strips[i], left > 0)
+				strips[i].time.Text = fmtTime(left)
+			end
+			local ends = Zoo:GetAttribute("TimerEnds")
+			local left = (ends or 0) - now
+			if ends and left > 0 then
+				timer.title.Text = Zoo:GetAttribute("TimerTitle") or "Countdown"
+				timer.time.Text = fmtTime(math.ceil(left))
+				timerDone = false
+			elseif not timerDone then
+				timerDone = true
+				if ends then toast((Zoo:GetAttribute("TimerTitle") or "Countdown") .. ": NOW!", C.yellow) end
+			end
+			show(timer, ends ~= nil and left > 0)
+			local h = topLayout.AbsoluteContentSize.Y
+			toasts.Position = U(0.5, 0, 0, h > 4 and h + 14 or 4) -- toasts drop under the banners
+			task.wait(0.25)
+		end
+	end)
+
+	-- announcement: a big card that pops in over the upper middle of the screen for AnnounceSeconds
+	local holder = scaled(new("Frame", { Name = "Announcement", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0.17, 0), Size = O(760, 150),
+		BackgroundTransparency = 1, Visible = false, ZIndex = 30 }, gui)) -- on gui, not hud, so it shows over open windows
+	local card0 = new("Frame", { Name = "Card", Size = S(1, 1), BackgroundColor3 = P.red[3] }, holder)
+	round(card0, 18)
+	ink(card0, 5)
+	local face = round(new("Frame", { Name = "Face", Size = U(1, 0, 1, -7) }, card0), 17)
+	grad(face, { hex("FF5A3D"), hex("D8000F") })
+	studs(face, 0.7, nil, 17)
+	rays(face, 190, O(86, 70), C.yellow)
+	local news = sticker(face, "newspaper", 104, O(86, 70), true)
+	-- the announcer's Roblox headshot replaces the newspaper; if it can't load, the newspaper stays
+	local avatar = round(new("ImageLabel", { Name = "Avatar", AnchorPoint = CENTER, Position = O(86, 70), Size = O(112, 112), BackgroundColor3 = hex("3A4A72"), Visible = false }, face), 56)
+	ink(avatar, 4)
+	local head = label(face, "ANNOUNCEMENT", 26, { Position = O(160, 8), Size = O(560, 32), TextXAlignment = LEFT })
+	goldText(head)
+	local text = label(face, "", 30, { Position = O(160, 38), Size = O(580, 76), TextXAlignment = LEFT, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true,
+		TextScaled = true }, true)
+	new("UITextSizeConstraint", { MaxTextSize = 30, MinTextSize = 16 }, text)
+	local from = label(face, "", 20, { Position = O(160, 112), Size = O(580, 26), TextXAlignment = RIGHT, TextColor3 = C.yellow })
+	local pop = new("UIScale", { Name = "Pop" }, card0)
+	local shownId = Zoo:GetAttribute("AnnounceId") -- an announcement made before you joined is not replayed
+	Zoo:GetAttributeChangedSignal("AnnounceId"):Connect(function()
+		local id = Zoo:GetAttribute("AnnounceId")
+		if id == shownId then return end
+		shownId = id
+		text.Text = Zoo:GetAttribute("AnnounceText") or ""
+		avatar.Visible, news.Visible = false, true
+		local uid = Zoo:GetAttribute("AnnounceUserId")
+		if uid then
+			task.spawn(function()
+				local ok, img = pcall(Players.GetUserThumbnailAsync, Players, uid, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+				if ok and shownId == id then avatar.Image, avatar.Visible, news.Visible = img, true, false end
+			end)
+		end
+		from.Text = "- " .. (Zoo:GetAttribute("AnnounceFrom") or "Admin")
+		holder.Visible = true
+		pop.Scale = 0.5
+		TweenService:Create(pop, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		task.delay(Zoo:GetAttribute("AnnounceSeconds") or 8, function()
+			if shownId ~= id then return end -- a newer announcement took over
+			local tw = TweenService:Create(pop, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0.5 })
+			tw.Completed:Once(function() if shownId == id then holder.Visible = false end end)
+			tw:Play()
+		end)
+	end)
+end
+
 ----- weather: the server picks random weathers (ZooWeather); every client tweens the sky, drops the falling code and shows the banner -----
 do
-	local banner = scaled(new("Frame", { Name = "Weather", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 6), Size = O(460, 78), BackgroundColor3 = BLACK, Visible = false }, hud))
+	local banner = new("Frame", { Name = "Weather", Size = O(460, 78), BackgroundColor3 = BLACK, Visible = false, LayoutOrder = 1 }, topStack)
 	round(banner, 16)
 	ink(banner, 4)
 	local face = round(new("Frame", { Name = "Face", Size = U(1, 0, 1, -5) }, banner), 15)
@@ -1713,10 +1825,439 @@ do
 				local left = (Zoo:GetAttribute("WeatherEnds") or 0) - workspace:GetServerTimeNow()
 				sub.Text = string.format("%d%% %s mutation  ·  %s left", math.round(weatherNow.chance * 100), weatherNow.mutation, fmtTime(left))
 			end
-			toasts.Position = U(0.5, 0, 0, banner.Visible and banner.AbsoluteSize.Y + 14 or 4) -- toasts drop under the banner
 			task.wait(0.5)
 		end
 	end)
+end
+
+----- Admin Panel: only built for players the server marks Admin. Every button goes through Remotes.Admin, which re-checks admin on the server. -----
+do
+	local SLATE = { hex("7A8196"), hex("3A3F52"), hex("1A1D27") } -- idle tabs and off toggles
+	local RED_RIM = { hex("FF6A5C"), hex("E0101C"), hex("8E0610") }
+	local CW, CH = 744, 534 -- content area right of the tabs
+	local built = false
+
+	local function build()
+		built = true
+		local remote = Remotes:WaitForChild("Admin")
+		local function call(action, payload)
+			local ok, good, msg, data = pcall(remote.InvokeServer, remote, action, payload or {})
+			if not ok then
+				toast("Admin request failed", C.red)
+				return false
+			end
+			if msg then toast(msg, good and C.cash or C.red) end
+			return good, data
+		end
+
+		local body = window("Admin", "Admin Panel", "hammer", 1000, 600, RED_RIM)
+
+		-- kit bits only the panel uses
+		local function input(parent, size, pos, placeholder, text, digits)
+			local box = new("TextBox", { Size = size, Position = pos, BackgroundColor3 = DISPLAY, PlaceholderText = placeholder or "", Text = text or "", Font = FONT,
+				TextSize = 26, TextColor3 = WHITE, PlaceholderColor3 = hex("7D88A8"), ClearTextOnFocus = false, TextTruncate = Enum.TextTruncate.AtEnd }, parent)
+			round(box, 10)
+			ink(box, 3)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, box)
+			if digits then
+				box:GetPropertyChangedSignal("Text"):Connect(function()
+					local clean = box.Text:gsub("%D", ""):sub(1, 6)
+					if clean ~= box.Text then box.Text = clean end
+				end)
+			end
+			return box
+		end
+		local function caption(parent, str, pos, w)
+			return label(parent, str, 24, { Position = pos, Size = O(w or 300, 32), TextXAlignment = LEFT, TextColor3 = C.yellow })
+		end
+		local function title(parent, str)
+			label(parent, str, 36, { Position = O(0, 0), Size = O(CW, 44) })
+		end
+		local function mark(b, on) -- the picked chip or tile gets a white outline
+			b.Outline.Color = on and WHITE or BLACK
+			b.Outline.Thickness = on and 5 or 4
+		end
+		local function scroller(parent, pos, size)
+			local s = new("ScrollingFrame", { Position = pos, Size = size, BackgroundTransparency = 1, ScrollBarThickness = 8, ScrollBarImageColor3 = hex("9A9A9A"),
+				TopImage = "", BottomImage = "", CanvasSize = U(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y }, parent)
+			return s
+		end
+
+		-- left: the tab column; right: one page per tab
+		local tabs, pages, refresh = {}, {}, {}
+		local active
+		local function show(name)
+			active = name
+			for n, b in tabs do
+				paint(b, n == name and P.green or SLATE)
+				pages[n].Visible = n == name
+			end
+			if refresh[name] then task.spawn(refresh[name]) end
+		end
+		local TAB_LIST = { { "Players", "group" }, { "Give", "gift" }, { "Events", "cloud" }, { "Announce", "newspaper" }, { "Timer", "clock" }, { "Server", "gear" } }
+		for i, t in TAB_LIST do
+			tabs[t[1]] = button(body, t[1], SLATE, O(196, 60), O(100, 34 + (i - 1) * 72), function() show(t[1]) end,
+				{ icon = t[2], iconSize = 38, text = 26, name = t[1] .. "Tab" })
+			pages[t[1]] = new("Frame", { Name = t[1], Position = O(216, 0), Size = O(CW, CH), BackgroundTransparency = 1, Visible = false }, body)
+		end
+		label(body, "Only admins see this", 18, { Position = O(0, 34 + 6 * 72 - 20), Size = O(200, 24), TextColor3 = hex("9AA6C8") })
+		new("Frame", { Name = "Divider", BackgroundColor3 = BLACK, BackgroundTransparency = 0.5, Position = O(205, 0), Size = O(3, CH) }, body)
+
+		----- Players -----
+		local roster = {} -- last list from the server
+		local target -- userId the Give tab acts on (nil = me)
+		local renderGive -- set by the Give tab
+		do
+			local page = pages.Players
+			local count = label(page, "", 30, { Position = O(0, 0), Size = O(500, 44), TextXAlignment = LEFT })
+			button(page, "REFRESH", P.blue, O(150, 46), O(CW - 79, 22), function() task.spawn(refresh.Players) end, { text = 22 })
+			local list = scroller(page, O(0, 56), O(CW, CH - 56))
+			new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+			new("UIPadding", { PaddingRight = UDim.new(0, 12), PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 8) }, list)
+			local rows = {}
+			local function row(p, i)
+				local f = rows[p.userId]
+				if f then f:Destroy() end
+				f = round(new("Frame", { Size = U(1, 0, 0, 80), BackgroundColor3 = i % 2 == 1 and hex("2B3B70") or hex("24325F"), LayoutOrder = i }, list), 14)
+				ink(f, 3, p.userId == player.UserId and C.yellow or BLACK)
+				rows[p.userId] = f
+				local av = round(new("ImageLabel", { Size = O(62, 62), Position = O(9, 9), BackgroundColor3 = hex("3A4A72"),
+					Image = "rbxthumb://type=AvatarHeadShot&id=" .. p.userId .. "&w=150&h=150" }, f), 31)
+				ink(av, 3)
+				local name = label(f, p.displayName, 26, { Position = O(82, 6), Size = O(250, 34), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+				if p.admin then name.TextColor3 = hex("FF8A80") end
+				label(f, "@" .. p.name, 16, { Position = O(83, 38), Size = O(250, 20), TextXAlignment = LEFT, TextColor3 = hex("B8C2E0"), TextTruncate = Enum.TextTruncate.AtEnd })
+				label(f, "$" .. Config.format(p.cash) .. "  ·  <font color=\"#6BFF3A\">+$" .. Config.format(p.rate) .. "/s</font>  ·  " .. p.animals .. " animals", 16,
+					{ Position = O(83, 56), Size = O(260, 20), TextXAlignment = LEFT, TextColor3 = C.yellow })
+				local x = 352
+				local function act(str, pal, w, cb)
+					local b = button(f, str, pal, O(w, 50), O(x + w / 2, 38), cb, { text = 20 })
+					x += w + 8
+					return b
+				end
+				act("GIVE", P.cyan, 84, function()
+					target = p.userId
+					show("Give")
+				end)
+				act("GO TO", P.blue, 86, function() call("player", { target = p.userId, op = "goto" }) end)
+				act("BRING", P.purple, 88, function() call("player", { target = p.userId, op = "bring" }) end)
+				local armed = false
+				local kick
+				kick = act("KICK", P.red, 78, function()
+					if not armed then -- first press arms it, the second within 3 seconds kicks
+						armed = true
+						setLabel(kick, "SURE?")
+						task.delay(3, function()
+							armed = false
+							if kick.Parent then setLabel(kick, "KICK") end
+						end)
+						return
+					end
+					if call("player", { target = p.userId, op = "kick" }) then task.delay(0.5, refresh.Players) end
+				end)
+				if p.admin then -- admins can't be kicked: a flat badge sits where KICK would be
+					kick.Visible = false
+					local badge = round(new("Frame", { AnchorPoint = CENTER, Position = O(x - 47, 38), Size = O(78, 40), BackgroundColor3 = P.red[2] }, f), 10)
+					ink(badge, 3)
+					label(badge, "ADMIN", 18, { Size = S(1, 1) })
+				end
+			end
+			refresh.Players = function()
+				local ok, data = call("players")
+				if not ok or not data then return end
+				roster = data.players
+				for id, f in rows do f:Destroy() rows[id] = nil end
+				for i, p in roster do row(p, i) end
+				count.Text = #roster .. (#roster == 1 and " player" or " players") .. " in this server"
+				if renderGive then renderGive() end
+				if refresh.ServerInfo then refresh.ServerInfo(data.info) end
+			end
+			task.spawn(function() -- keep cash and income fresh while the tab is open
+				while true do
+					task.wait(4)
+					if current == "Admin" and active == "Players" then refresh.Players() end
+				end
+			end)
+		end
+
+		----- Give -----
+		do
+			local page = pages.Give
+			local s = scroller(page, O(0, 0), O(CW, CH))
+			local c = new("Frame", { BackgroundTransparency = 1, Size = O(CW - 16, 640) }, s)
+			local W = CW - 16
+
+			-- who it goes to
+			local bar = sheetPanel(c, O(W, 76), O(0, 4))
+			local av = round(new("ImageLabel", { Size = O(58, 58), Position = O(10, 7), BackgroundColor3 = hex("3A4A72") }, bar), 29)
+			ink(av, 3)
+			caption(bar, "Giving to", O(80, 4), 200)
+			local who = label(bar, "", 30, { Position = O(80, 30), Size = O(330, 38), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+			button(bar, "ME", P.blue, O(80, 50), O(W - 236, 36), function()
+				target = nil
+				renderGive()
+			end, { text = 24 })
+			button(bar, "PICK PLAYER", P.cyan, O(170, 50), O(W - 99, 36), function() show("Players") end, { text = 22 })
+			local function targetId() return target or player.UserId end
+			local function give(kind, a, b, cc)
+				local ok = call("give", { target = targetId(), kind = kind, a = a, b = b, c = cc })
+				if ok then task.delay(0.3, refresh.Players) end
+				return ok
+			end
+
+			-- cash
+			local y = 90
+			caption(c, "CASH", O(0, y + 12), 90)
+			local cash = input(c, O(200, 52), O(90, y + 2), "1m, 2.5b, -500k", "1m")
+			for i, q in { "1M", "1B", "1T" } do
+				button(c, q, P.gold, O(64, 50), O(314 + (i - 1) * 70, y + 28), function() cash.Text = q:lower() end, { text = 22 })
+			end
+			button(c, "GIVE", P.lime, O(110, 52), O(W - 170, y + 28), function() give("cash", cash.Text) end, { text = 24, vivid = true })
+			button(c, "TAKE", P.red, O(100, 52), O(W - 55, y + 28), function()
+				local n = cash.Text:gsub("^%-", "")
+				give("cash", "-" .. n)
+			end, { text = 24 })
+
+			-- boosts
+			y += 70
+			caption(c, "BOOSTS", O(0, y + 12), 90)
+			local minutes = input(c, O(110, 52), O(90, y + 2), "min", "30", true)
+			label(c, "minutes", 20, { Position = O(206, y + 14), Size = O(80, 28), TextXAlignment = LEFT })
+			button(c, "2x LUCK", P.gold, O(170, 52), O(380, y + 28), function() give("luck", minutes.Text) end, { icon = "clover", iconSize = 32, text = 22 })
+			button(c, "2x MONEY", P.green, O(190, 52), O(570, y + 28), function() give("money", minutes.Text) end, { icon = "cash", iconSize = 32, text = 22, vivid = true })
+
+			-- animal: rarity, mutation, stars
+			y += 74
+			new("Frame", { BackgroundColor3 = C.line, BackgroundTransparency = 0.6, Size = O(W, 2), Position = O(0, y - 8) }, c)
+			caption(c, "ANIMAL", O(0, y), 200)
+			local pick = { r = 6, m = 1, st = 5 }
+			local function chipRow(yy, list, pals, key, w, text, icon)
+				local bs = {}
+				for i, e in list do
+					local pal = pals[i]
+					local rainbow = typeof(pal) == "ColorSequence"
+					local b
+					b = button(c, text(e, i), rainbow and P.pink or pal, O(w, 46), O(w / 2 + (i - 1) * (w + 8), yy + 23), function()
+						pick[key] = i
+						for j, o in bs do mark(o, j == i) end
+					end, { text = 20, vivid = true, icon = icon, iconSize = 26 })
+					if rainbow then b.Face.UIGradient.Color, b.Face.UIGradient.Rotation = pal, 0 end
+					bs[i] = b
+					mark(b, i == pick[key])
+				end
+			end
+			chipRow(y + 34, Config.RARITIES, RARITY_PAL, "r", 112, function(e) return e.name:upper() end)
+			chipRow(y + 88, Config.MUTATIONS, MUT_PAL, "m", 136, function(e) return e.name:upper() end)
+			chipRow(y + 142, { 1, 2, 3, 4, 5 }, { P.gold, P.gold, P.gold, P.gold, P.gold }, "st", 76, function(_, i) return tostring(i) end, "star")
+			button(c, "GIVE ANIMAL", P.lime, O(250, 54), O(W - 125, y + 165), function()
+				give("animal", tostring(pick.r), tostring(pick.m), tostring(pick.st))
+			end, { icon = "paw", iconSize = 34, text = 24, vivid = true })
+
+			-- game passes (a flag in their save, no purchase)
+			y += 206
+			new("Frame", { BackgroundColor3 = C.line, BackgroundTransparency = 0.6, Size = O(W, 2), Position = O(0, y - 8) }, c)
+			caption(c, "GAME PASSES", O(0, y), 300)
+			label(c, "Test flag in their save, no Robux", 16, { Position = O(W - 300, y + 4), Size = O(300, 24), TextXAlignment = RIGHT, TextColor3 = hex("9AA6C8") })
+			local passBtns = {}
+			local PASS_ORDER = { { "VIP", "crown" }, { "Money2x", "cash" }, { "Luck2x", "clover" } }
+			for i, pinfo in PASS_ORDER do
+				local key = pinfo[1]
+				local w = (W - 16) / 3
+				passBtns[key] = button(c, key, SLATE, O(w, 52), O(w / 2 + (i - 1) * (w + 8), y + 58), function()
+					local owned = passBtns[key]:GetAttribute("On")
+					give(owned and "takepass" or "pass", key:lower())
+				end, { icon = pinfo[2], iconSize = 36, text = 22 })
+			end
+			c.Size = O(W, y + 88)
+
+			renderGive = function()
+				local me = targetId()
+				local p
+				for _, r in roster do if r.userId == me then p = r end end
+				if not p and target then target = nil return renderGive() end -- they left: back to me
+				who.Text = p and p.displayName or player.DisplayName
+				who.TextColor3 = me == player.UserId and WHITE or C.cash
+				av.Image = "rbxthumb://type=AvatarHeadShot&id=" .. me .. "&w=150&h=150"
+				for key, b in passBtns do
+					local on = p and p.passes[key] == true
+					b:SetAttribute("On", on)
+					paint(b, on and P.green or SLATE)
+					setLabel(b, key .. (on and ": ON" or ": OFF"))
+				end
+			end
+			refresh.Give = refresh.Players -- refreshing the roster also redraws this tab
+		end
+
+		----- Events: a tile per weather and per boost event, a duration, Start and Stop -----
+		do
+			local page = pages.Events
+			title(page, "Events")
+			local list = {}
+			for _, w in Config.WEATHERS do table.insert(list, { name = w.name, text = w.name:upper(), icon = w.icon, color = w.color, weather = true }) end
+			for _, e in Config.BOOST_EVENTS do table.insert(list, { name = e.name, text = e.text, icon = e.icon, color = e.color, attr = e.attr }) end
+			local chosen = list[1]
+			local row = new("Frame", { BackgroundTransparency = 1, Position = O(0, 58), Size = O(CW, 190) }, page)
+			local gap = 18
+			local tw = math.min(220, (CW - gap * (#list - 1)) / #list)
+			local x0 = (CW - (#list * tw + (#list - 1) * gap)) / 2
+			local tiles = {}
+			for i, e in list do
+				local col = e.color
+				local pal = { col:Lerp(WHITE, 0.15), col:Lerp(BLACK, 0.5), col:Lerp(BLACK, 0.7) } -- bright top fading dark, like the reference tiles
+				local b
+				b = button(row, nil, pal, O(tw, 170), O(x0 + tw / 2 + (i - 1) * (tw + gap), 92), function()
+					chosen = e
+					for _, t in tiles do mark(t.b, t.e == e) end
+				end, { r = 14, lip = 7 })
+				rays(b.Face, 170, O(tw / 2, 62), WHITE)
+				sticker(b.Face, e.icon, 84, O(tw / 2, 62), true)
+				label(b.Face, e.text, 28, { Position = O(0, 106), Size = O(tw, 36) })
+				local time = label(b.Face, "", 20, { Position = O(0, 138), Size = O(tw, 24), TextColor3 = C.yellow })
+				local on = tag(b, "ON", O(tw - 14, 8), P.lime[3])
+				on.Visible = false
+				tiles[i] = { b = b, e = e, time = time, on = on }
+				mark(b, i == 1)
+			end
+			caption(page, "Event Duration (seconds)", O(0, 266), CW).TextXAlignment = Enum.TextXAlignment.Center
+			local dur = input(page, O(300, 64), O((CW - 300) / 2, 302), "150", "150", true)
+			dur.TextSize, dur.TextXAlignment = 38, Enum.TextXAlignment.Center
+			button(page, "START", P.green, O(230, 64), O(CW / 2 - 140, 420), function()
+				call("event", { name = chosen.name, seconds = tonumber(dur.Text) or 0 })
+			end, { text = 32, vivid = true })
+			button(page, "STOP", P.red, O(230, 64), O(CW / 2 + 140, 420), function()
+				call("event", { name = chosen.name, op = "stop" })
+			end, { text = 32 })
+			label(page, "Weather tiles boost their mutation. 2x events stack with players' own boosts.", 16,
+				{ Position = O(0, 470), Size = O(CW, 22), TextColor3 = hex("9AA6C8") })
+			task.spawn(function()
+				while true do
+					if current == "Admin" and active == "Events" then
+						local now = workspace:GetServerTimeNow()
+						for _, t in tiles do
+							local left
+							if t.e.weather then
+								left = Zoo:GetAttribute("Weather") == t.e.name and (Zoo:GetAttribute("WeatherEnds") or 0) - now or 0
+							else
+								left = (Zoo:GetAttribute(t.e.attr) or 0) - now
+							end
+							t.on.Visible = left > 0
+							t.time.Text = left > 0 and fmtTime(left) .. " left" or ""
+						end
+					end
+					task.wait(0.5)
+				end
+			end)
+		end
+
+		----- Announce -----
+		do
+			local page = pages.Announce
+			title(page, "Announcement")
+			local box = input(page, O(CW, 170), O(0, 58), "Type a message for the whole server...", "")
+			box.MultiLine, box.TextWrapped, box.TextTruncate = true, true, Enum.TextTruncate.None
+			box.TextXAlignment, box.TextYAlignment = LEFT, Enum.TextYAlignment.Top
+			box.UIPadding.PaddingTop, box.UIPadding.PaddingBottom = UDim.new(0, 10), UDim.new(0, 10)
+			local counter = label(page, "0/150", 18, { Position = O(CW - 120, 232), Size = O(120, 24), TextXAlignment = RIGHT, TextColor3 = hex("9AA6C8") })
+			box:GetPropertyChangedSignal("Text"):Connect(function()
+				if #box.Text > 150 then box.Text = box.Text:sub(1, 150) end
+				counter.Text = #box.Text .. "/150"
+			end)
+			caption(page, "Show it for", O(0, 262), 200)
+			local secs = 8
+			local chips = {}
+			for i, n in { 5, 8, 15, 30 } do
+				chips[i] = button(page, n .. "s", P.blue, O(84, 48), O(196 + (i - 1) * 94, 278), function()
+					secs = n
+					for j, b in chips do mark(b, j == i) end
+				end, { text = 22 })
+				mark(chips[i], n == secs)
+			end
+			button(page, "SEND TO EVERYONE", P.green, O(340, 66), O(CW / 2, 380), function()
+				if call("announce", { text = box.Text, seconds = secs }) then box.Text = "" end
+			end, { icon = "newspaper", iconSize = 42, text = 28, vivid = true })
+			label(page, "It pops up for every player with your name on it. Roblox's chat filter runs on it first.", 16,
+				{ Position = O(0, 430), Size = O(CW, 22), TextColor3 = hex("9AA6C8") })
+		end
+
+		----- Timer: a countdown strip every player sees -----
+		do
+			local page = pages.Timer
+			title(page, "Timer Countdown")
+			caption(page, "Title", O(0, 66), 200)
+			local name = input(page, O(CW - 140, 54), O(140, 58), "Event starts in", "Event starts in")
+			caption(page, "Seconds", O(0, 140), 200)
+			local secs = input(page, O(180, 54), O(140, 132), "60", "60", true)
+			for i, q in { { "30s", 30 }, { "1m", 60 }, { "5m", 300 }, { "10m", 600 } } do
+				button(page, q[1], P.blue, O(86, 50), O(380 + (i - 1) * 96, 159), function() secs.Text = tostring(q[2]) end, { text = 22 })
+			end
+			local status = label(page, "", 26, { Position = O(0, 220), Size = O(CW, 34), TextColor3 = C.yellow })
+			button(page, "START", P.green, O(230, 64), O(CW / 2 - 140, 320), function()
+				call("timer", { title = name.Text, seconds = tonumber(secs.Text) or 0 })
+			end, { text = 32, vivid = true })
+			button(page, "STOP", P.red, O(230, 64), O(CW / 2 + 140, 320), function() call("timer", { op = "stop" }) end, { text = 32 })
+			label(page, "Shows under the weather banner for everyone, then says NOW! when it hits zero.", 16,
+				{ Position = O(0, 370), Size = O(CW, 22), TextColor3 = hex("9AA6C8") })
+			task.spawn(function()
+				while true do
+					if current == "Admin" and active == "Timer" then
+						local left = (Zoo:GetAttribute("TimerEnds") or 0) - workspace:GetServerTimeNow()
+						status.Text = left > 0 and ("Running: " .. (Zoo:GetAttribute("TimerTitle") or "") .. "  " .. fmtTime(math.ceil(left))) or "No countdown running"
+					end
+					task.wait(0.25)
+				end
+			end)
+		end
+
+		----- Server options -----
+		do
+			local page = pages.Server
+			title(page, "Server Options")
+			local panel = sheetPanel(page, O(CW, 120), O(0, 58))
+			local stats = {}
+			for i, k in { "Players", "Uptime", "Version" } do
+				local x = (i - 1) * CW / 3
+				caption(panel, k:upper(), O(x, 14), CW / 3).TextXAlignment = Enum.TextXAlignment.Center
+				stats[k] = label(panel, "-", 40, { Position = O(x, 52), Size = O(CW / 3, 50) })
+			end
+			local weatherBtn
+			weatherBtn = button(page, "RANDOM WEATHER: ON", P.green, O(CW, 64), O(CW / 2, 230), function()
+				local on = not weatherBtn:GetAttribute("On")
+				local ok, data = call("server", { op = "weather", on = on })
+				if ok and data then refresh.ServerInfo(data) end
+			end, { icon = "cloud", iconSize = 40, text = 26, vivid = true })
+			button(page, "STOP ALL EVENTS", P.red, O((CW - 12) / 2, 64), O((CW - 12) / 4, 310), function() call("server", { op = "stopall" }) end,
+				{ icon = "cross", iconSize = 36, text = 24 })
+			button(page, "RESPAWN EVERYONE", P.blue, O((CW - 12) / 2, 64), O(CW - (CW - 12) / 4, 310), function() call("server", { op = "respawn" }) end,
+				{ icon = "house", iconSize = 36, text = 24 })
+			label(page, "Stop all ends the weather, 2x events and the countdown. Random weather off keeps the sky clear unless you start one.", 16,
+				{ Position = O(0, 356), Size = O(CW, 44), TextColor3 = hex("9AA6C8"), TextWrapped = true })
+			refresh.ServerInfo = function(info)
+				if not info then return end
+				stats.Players.Text = info.players .. "/" .. info.maxPlayers
+				stats.Uptime.Text = fmtTime(info.uptime)
+				stats.Version.Text = "v" .. info.version
+				weatherBtn:SetAttribute("On", not info.weatherPaused)
+				paint(weatherBtn, info.weatherPaused and SLATE or P.green)
+				setLabel(weatherBtn, "RANDOM WEATHER: " .. (info.weatherPaused and "OFF" or "ON"))
+			end
+			refresh.Server = refresh.Players
+		end
+
+		refreshers.Admin = function() show(active or "Players") end
+	end
+
+	-- the hammer button sits under the left menu, for admins only (above it, Roblox's chat window would eat its clicks)
+	local adminBtn = railButton(leftBar, 5, "ADMIN", P.red, function()
+		if not built then build() end
+		open("Admin")
+	end, { icon = "hammer", iconSize = 46, text = 26, name = "Admin" })
+	local function update()
+		local on = player:GetAttribute("Admin") == true
+		adminBtn.Visible = on
+		if not on and current == "Admin" then close("Admin") end
+	end
+	player:GetAttributeChangedSignal("Admin"):Connect(update)
+	update()
 end
 
 ----- plot signs: each plot's upgrade sign and draw easel show live info for whoever owns it -----

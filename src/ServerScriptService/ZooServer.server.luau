@@ -28,10 +28,14 @@ end
 ----- maths -----
 local function capacity(s) return math.min(Config.CAP_MAX, Config.CAP_START + s.data.capLevel) end
 
+-- an Admin Panel boost event (Config.BOOST_EVENTS[i]) is running: its attribute holds the server time it ends
+local function boostOn(i) return (Zoo:GetAttribute(Config.BOOST_EVENTS[i].attr) or 0) > workspace:GetServerTimeNow() end
+
 local function luck(s)
 	local l = 2 ^ s.data.luckLevel
 	if s.passes.Luck2x then l *= 2 end
 	if s.data.boostUntil > os.time() then l *= 2 end
+	if boostOn(1) then l *= 2 end -- admin event: 2x luck for everyone
 	return l
 end
 
@@ -43,6 +47,7 @@ local function rate(s)
 	if s.passes.Money2x then r *= 2 end
 	if s.passes.VIP then r *= 1.2 end
 	if s.data.moneyUntil > os.time() then r *= 2 end -- race prize
+	if boostOn(2) then r *= 2 end -- admin event: 2x money for everyone
 	return math.floor(r)
 end
 

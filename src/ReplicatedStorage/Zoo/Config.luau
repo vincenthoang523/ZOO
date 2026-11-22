@@ -54,6 +54,13 @@ Config.WEATHERS = {
 	},
 }
 
+-- Admin Panel events that double something for the whole server (ZooAdmin starts them, ZooServer's luck()/rate() apply them).
+-- attr = the ReplicatedStorage.Zoo attribute holding the server time it ends. Keep Luck first and Money second (ZooServer).
+Config.BOOST_EVENTS = {
+	{ name = "Luck", text = "2x LUCK", attr = "ServerLuckEnds", icon = "clover", color = rgb(255, 214, 40) },
+	{ name = "Money", text = "2x MONEY", attr = "ServerMoneyEnds", icon = "cashbundle", color = rgb(0, 190, 255) },
+}
+
 function Config.weather(name: string?): any
 	for _, w in Config.WEATHERS do
 		if w.name == name then return w end
@@ -126,6 +133,8 @@ Config.ICONS = {
 	-- Free Icon Pack v3.1 (uploaded 2026-11-16): sticker art and the intro skip button
 	fire = "rbxassetid://86782236536816", diamond = "rbxassetid://103499339444458", balloon = "rbxassetid://111496235104052",
 	strawberry = "rbxassetid://84280958364881", cloud = "rbxassetid://70823404569278", rocket = "rbxassetid://130155476113713", skip = "rbxassetid://102098865538470",
+	-- FOLK pack (uploaded 2026-11-22) for the Admin Panel
+	hammer = "rbxassetid://78796943006277", gear = "rbxassetid://81635946004815", newspaper = "rbxassetid://77189352700393",
 }
 Config.LUCK_BOOST_MINUTES = 5
 
