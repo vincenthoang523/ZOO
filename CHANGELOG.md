@@ -2,6 +2,21 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-21
+
+Scripts re-exported from Studio at place v108. This also catches up work saved in Studio but never pushed to the repo: the Admin Panel (`ZooAdmin`), the weather events (`ZooWeather`, Matrix weather), the race reset and solo runs, and the stall build/check helpers.
+
+- **Mutation looks** (place v108): each mutation now looks like its name wherever an animal shows (zoo pens, race mounts, the roll screen, menus). See `MUT_LOOK` and `mutationFx` in `ZooClient`.
+  - **Gold:** warm tint, orange rim, sparkles, gold glow.
+  - **Diamond:** icy tint, cyan rim, white sparkles.
+  - **Rainbow:** the rim cycles through the colours, with rainbow particles.
+  - **Matrix:** green tint and an aura of falling 1s and 0s.
+- **Race: no more getting stuck** (place v80):
+  - **Skid:** each car rides 0.35 studs up on an invisible round skid, so its flat bottom no longer catches on edges in the invisible floor under the gravel.
+  - **Walls:** invisible walls run along both gravel edges, so a car can't drop into the ditch or the trench by the fence. They are in the `RaceWall` collision group, so only race cars hit them and people on foot still cross the track.
+  - **Reverse:** top reverse speed is 18 (was 10), and steering while reversing works at once.
+- **New in the repo:** `ZooAdmin.server.luau`, `ZooWeather.server.luau`, `EnclosureCheck.luau`, `StallCheck.luau`, `StallBuilder.luau`.
+
 ## 2026-11-20
 
 - **Race driving:** racers now sit on their animal and drive it like a car (place v78).
