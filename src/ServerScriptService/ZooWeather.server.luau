@@ -12,9 +12,10 @@ local Api = require(script.Parent.ZooApi)
 local rng = Random.new()
 
 local phaseEnd = 0 -- os.clock() when the current weather (or calm gap) is over
+local paused = false -- the Admin Panel's Server tab can turn random weather off; admin-started weather still runs
 
-local function start(w)
-	local secs = rng:NextInteger(w.duration[1], w.duration[2])
+local function start(w, secs)
+	secs = secs or rng:NextInteger(w.duration[1], w.duration[2])
 	Zoo:SetAttribute("WeatherEnds", workspace:GetServerTimeNow() + secs) -- before Weather, so clients see both together
 	Zoo:SetAttribute("Weather", w.name)
 	phaseEnd = os.clock() + secs
@@ -53,10 +54,16 @@ command.Triggered:Connect(function(source, text)
 	Api.notify(player, "No weather called " .. arg)
 end)
 
+-- for the Admin Panel (ZooAdmin)
+Api.startWeather = start
+Api.clearWeather = clear
+function Api.setWeatherPaused(on) paused = on end
+function Api.weatherPaused() return paused end
+
 clear()
 while true do
 	task.wait(1)
 	if os.clock() >= phaseEnd then
-		if Zoo:GetAttribute("Weather") then clear() else start(pick()) end
+		if Zoo:GetAttribute("Weather") then clear() elseif not paused then start(pick()) end
 	end
 end
