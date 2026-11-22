@@ -9,6 +9,7 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
   - **Fix:** they are now 8 sector pieces (`race_stones()` in `blender/build_zoo_kit.py`, uploaded as `ZooKit_RaceStones_v1`), placed inside `RaceTrack` in the workspace and in the `ZooKit` template. Same stones, same spots.
   - **Edging stones:** they sit a little higher (+0.2 studs), and the outer ones a little further in, so none sink until only a sliver shows. Pebbles are +0.03.
   - The old meshes are kept in `ServerStorage.OldEnclosures.RaceTrackStones_v0`.
+  - **Hollow stones fixed:** about half the stones were inside out (every face pointing inward), so Roblox hid their near side and they looked hollow or missing a side. `_stone()` now turns every face outward. Uploaded as `ZooKit_RaceStones_v2` and swapped in; a check of all 32,500 stone faces finds none facing inward.
 
 ## 2026-11-21
 

@@ -853,13 +853,31 @@ def _track_scatter():
     return out
 
 
+def _stone(p, color, r, M, jitter, seed):
+    """Like Piece.ico (same shape for the same seed), but every face is turned to point away from the stone's centre.
+    recalc_face_normals turns about half of these small flattened stones inside out, and Roblox then shows them hollow."""
+    bm = bmesh.new()
+    bmesh.ops.create_icosphere(bm, subdivisions=0, radius=r)
+    rnd = random.Random(seed)
+    for v in bm.verts: v.co *= 1 + rnd.uniform(-jitter, jitter)
+    bm.transform(M)
+    bm.normal_update()
+    c = sum((v.co for v in bm.verts), Vector()) / len(bm.verts)
+    inward = [f for f in bm.faces if f.normal.dot(f.calc_center_median() - c) < 0]
+    if inward: bmesh.ops.reverse_faces(bm, faces=inward)
+    me = bpy.data.meshes.new("tmp")
+    bm.to_mesh(me); bm.free()
+    p.parts.setdefault(color, bmesh.new()).from_mesh(me)
+    bpy.data.meshes.remove(me)
+
+
 def race_stones(s):
     """One 45-degree sector of the track's pebbles and edging stones, origin = zoo centre like RaceTrack.
     Split up because Roblox draws a single mesh with thousands of loose chips spread over 320 studs with stray triangles."""
     p = Piece("RaceStones%d" % (s + 1), bevel=0.0, flat=("pebble", "pebbleLight", "rock"))
     for color, r, M, jitter, seed, a in _track_scatter():
         if int((a % (2 * math.pi)) / (2 * math.pi) * STONE_SECTORS) == s:
-            p.ico(color, r, 0, M, jitter, seed)
+            _stone(p, color, r, M, jitter, seed)
     return p
 
 

@@ -19,6 +19,7 @@ Everything is uploaded to group `229775176`. Uploads are permanent, so a changed
 | 85122827813192 | ZooKit_Race (gravel race loop, start arch, log, hay, rocks, mud, boost ring, sign-up pad, opened gate) | `blender/export/ZooKit_Race.glb` |
 | 111350055854999 | ZooKit_Race_v2 (thin boost ring, round island ground, border fence) | `blender/export/ZooKit_Race_v2.glb` |
 | 70951429730671 | ZooKit_RaceStones_v1 (the track's pebbles and edging stones in 8 sectors, `RaceStones1`-`8`) | `blender/export/ZooKit_RaceStones_v1.glb` |
+| 131718121123170 | ZooKit_RaceStones_v2 (the same stones, every face turned outward; this is the one in use) | `blender/export/ZooKit_RaceStones_v2.glb` |
 
 In Studio, the imported pieces become templates in `ServerStorage.ZooKit`, and copies of them are placed in `workspace.Zoo.Art`.
 
@@ -69,6 +70,6 @@ Created through Open Cloud on 2026-11-19. Icons are drawn by `blender/make_pass_
 
 ## Race layout
 
-The track's pebbles and edging stones are 24 MeshParts (`pebble1`-`8`, `pebbleLight1`-`8`, `rock1`-`8`) inside `RaceTrack`, one set per 45-degree sector. Don't merge them back into one mesh each: Roblox draws a single mesh of thousands of loose chips spread over 320 studs with long stray triangles. In Studio they were placed from the build stats, then raised to match the current script (edging stones +0.2, pebbles +0.03); the uploaded v1 meshes are the same shapes. The old one-piece meshes are in `ServerStorage.OldEnclosures.RaceTrackStones_v0`.
+The track's pebbles and edging stones are 24 MeshParts (`pebble1`-`8`, `pebbleLight1`-`8`, `rock1`-`8`) inside `RaceTrack`, one set per 45-degree sector. Don't merge them back into one mesh each: Roblox draws a single mesh of thousands of loose chips spread over 320 studs with long stray triangles. In Studio they were placed from the build stats, then raised to match the current script (edging stones +0.2, pebbles +0.03); the placed meshes are v2, built by the current script. Stones are made by `_stone()`, which turns every face outward: Blender's recalc_face_normals left about half of them inside out, and Roblox showed those hollow. The old one-piece meshes are in `ServerStorage.OldEnclosures.RaceTrackStones_v0`.
 
 The track mesh is visual only. `RaceBuilder` lays the collision as invisible parts: 120 boxes under the gravel, rim boxes between the hedge and the track, wedge ramps down the outer shoulder, and a 72-piece wall in the border fence. The ring, obstacle, grid and pad positions are in `ReplicatedStorage.Zoo.RaceLayout`, which uses the same numbers as `blender/race_layout.py`. To move anything, edit both files, then run `require(game.ServerStorage.RaceBuilder:Clone()).build()` from the command bar.
