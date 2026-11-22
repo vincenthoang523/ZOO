@@ -22,16 +22,20 @@ local sessions = {} -- [Player] = { data, loaded, plot, passes, lastCreate, last
 local rng = Random.new()
 
 local function newData()
-	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, moneyUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false }
+	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, moneyUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false, passGrants = {} }
 end
 
 ----- maths -----
 local function capacity(s) return math.min(Config.CAP_MAX, Config.CAP_START + s.data.capLevel) end
 
+-- an Admin Panel boost event (Config.BOOST_EVENTS[i]) is running: its attribute holds the server time it ends
+local function boostOn(i) return (Zoo:GetAttribute(Config.BOOST_EVENTS[i].attr) or 0) > workspace:GetServerTimeNow() end
+
 local function luck(s)
 	local l = 2 ^ s.data.luckLevel
 	if s.passes.Luck2x then l *= 2 end
 	if s.data.boostUntil > os.time() then l *= 2 end
+	if boostOn(1) then l *= 2 end -- admin event: 2x luck for everyone
 	return l
 end
 
@@ -43,6 +47,7 @@ local function rate(s)
 	if s.passes.Money2x then r *= 2 end
 	if s.passes.VIP then r *= 1.2 end
 	if s.data.moneyUntil > os.time() then r *= 2 end -- race prize
+	if boostOn(2) then r *= 2 end -- admin event: 2x money for everyone
 	return math.floor(r)
 end
 
@@ -160,7 +165,7 @@ local function ownsPass(player, id)
 end
 
 local function onJoin(player)
-	local s = { data = newData(), loaded = false, passes = {}, lastCreate = 0, lastCall = 0 }
+	local s = { data = newData(), loaded = false, passes = {}, bought = {}, lastCreate = 0, lastCall = 0 } -- bought: passes paid for with Robux; an admin's /take pass can never remove these
 	for attempt = 1, 3 do
 		local ok, saved = pcall(store.GetAsync, store, tostring(player.UserId))
 		if ok then
@@ -176,7 +181,10 @@ local function onJoin(player)
 	end
 	-- false = the client plays the intro; it only becomes true when the client reports the intro finished
 	player:SetAttribute("IntroDone", s.data.introDone)
-	for name, id in Config.PASSES do s.passes[name] = ownsPass(player, id) end
+	for name, id in Config.PASSES do
+		s.bought[name] = ownsPass(player, id)
+		s.passes[name] = s.bought[name] or s.data.passGrants[name] == true -- passGrants: an admin's /give pass (ZooAdmin), for testing
+	end
 	-- offline earnings: pay up to OFFLINE_HOURS of income for the time away; the client popup only reports it
 	if s.loaded and s.data.lastSeen > 0 then
 		local away = os.time() - s.data.lastSeen
@@ -281,10 +289,10 @@ on("Create", function(player, s, raw)
 		roll -= chances[i]
 		if roll < 0 then rarity = i break end
 	end
-	-- roll 2: mutation, fixed odds
-	local mroll, mutation = rng:NextNumber(), 1
-	for i, m in Config.MUTATIONS do
-		mroll -= m.chance
+	-- roll 2: mutation; the current weather (ZooWeather) boosts its own mutation
+	local mChances, mroll, mutation = Config.mutationChances(Zoo:GetAttribute("Weather")), rng:NextNumber(), 1
+	for i, p in mChances do
+		mroll -= p
 		if mroll < 0 then mutation = i break end
 	end
 	-- the judge scores the drawing itself; income = base x stars x rarity x mutation
@@ -295,7 +303,7 @@ on("Create", function(player, s, raw)
 	local animal = { id = HttpService:GenerateGUID(false), d = design, r = rarity, m = mutation, st = stars, inc = income, eq = equippedCount(s) < capacity(s) }
 	table.insert(s.data.animals, animal)
 	Remotes.Rolled:FireClient(player, {
-		name = name, d = design, r = rarity, m = mutation, rChance = chances[rarity], mChance = Config.MUTATIONS[mutation].chance,
+		name = name, d = design, r = rarity, m = mutation, rChance = chances[rarity], mChance = mChances[mutation],
 		scores = scores, stars = stars, starMult = starMult, rarityMult = rarityMult, mutMult = mutMult, mult = mult, inc = income,
 	})
 	changed(player)
@@ -405,7 +413,7 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, id, b
 	local s = sessions[player]
 	if not (bought and s) then return end
 	for name, passId in Config.PASSES do
-		if passId == id then s.passes[name] = true end
+		if passId == id then s.passes[name], s.bought[name], s.data.passGrants[name] = true, true, nil end
 	end
 	changed(player)
 end)
@@ -432,6 +440,7 @@ end
 
 ----- API for the other server scripts (ZooRace); never exposed to clients -----
 function Api.session(player) return sessions[player] end
+Api.isAdmin = isAdmin
 function Api.findAnimal(player, id)
 	local s = sessions[player]
 	return s and findAnimal(s, id)
@@ -459,6 +468,16 @@ function Api.addMoney(player, minutes)
 	sync(player, true)
 end
 Api.notify = notify
+Api.changed = changed
+-- adds a finished animal (ZooAdmin's /give animal); equips it if there is room. false = the zoo is full
+function Api.addAnimal(player, animal)
+	local s = sessions[player]
+	if not s or #s.data.animals >= Config.MAX_INVENTORY then return false end
+	animal.eq = equippedCount(s) < capacity(s)
+	table.insert(s.data.animals, animal)
+	changed(player)
+	return true
+end
 
 ----- loops -----
 Players.PlayerAdded:Connect(onJoin)

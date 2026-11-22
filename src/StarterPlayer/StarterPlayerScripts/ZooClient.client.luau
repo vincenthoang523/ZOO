@@ -15,6 +15,7 @@ local Lighting = game:GetService("Lighting")
 local GuiService = game:GetService("GuiService")
 local AvatarEditorService = game:GetService("AvatarEditorService")
 local GroupService = game:GetService("GroupService")
+local PolicyService = game:GetService("PolicyService")
 
 local player = Players.LocalPlayer
 local Zoo = ReplicatedStorage:WaitForChild("Zoo")
@@ -46,10 +47,11 @@ local P = {
 }
 local C = { yellow = hex("FFE600"), cash = hex("6BFF3A"), red = hex("FF1F2A"), line = hex("D6D6D6"), canvas = rgb(44, 58, 88) } -- dark canvas: the grey base colour and pale paints stand out on it
 local RARITY_PAL = { P.cyan, P.lime, P.blue, P.purple, P.gold, P.red } -- Common .. Mythic
-local MUT_PAL = { -- Normal, Gold, Diamond, Rainbow (Config.MUTATIONS order)
+local MUT_PAL = { -- Normal, Gold, Diamond, Rainbow, Matrix (Config.MUTATIONS order)
 	{ hex("EEF2F8"), hex("9AA4B5"), hex("5C6575") }, P.gold, { hex("C9FDFF"), hex("2EC4FF"), hex("1677B3") },
 	ColorSequence.new({ ColorSequenceKeypoint.new(0, hex("FF2B2B")), ColorSequenceKeypoint.new(0.2, hex("FF9A00")), ColorSequenceKeypoint.new(0.4, hex("FFE600")),
 		ColorSequenceKeypoint.new(0.6, hex("2BE000")), ColorSequenceKeypoint.new(0.8, hex("00BFFF")), ColorSequenceKeypoint.new(1, hex("CC00FF")) }),
+	{ hex("8CFFAE"), hex("00C853"), hex("006B2B") },
 }
 local STUD = "rbxassetid://3014551673" -- 2 x 2 studs per tile
 local ICON = Config.ICONS or {}
@@ -104,6 +106,79 @@ RunService.RenderStepped:Connect(function()
 		elseif a.k == "wiggle" then o.Rotation = a.rot + math.sin(t * 3 + i) * 6
 		elseif a.k == "glint" then o.Color = C.yellow:Lerp(WHITE, (math.sin(t * 5) + 1) / 2)
 		end
+	end
+end)
+
+-- Mutation looks, laid over a Render.draw drawing wherever an animal shows (zoo, race mount, roll screen, menus).
+-- The white rim (Render's ZIndex 1 frames) is recoloured and the body cells (ZIndex 2) tinted once, at draw time.
+-- (Not CanvasGroups: their GroupColor3 and UIGradient don't render on every device, so the look would silently vanish.)
+-- Sparkles and falling digits are looping tweens, cancelled when the drawing is destroyed. Only Rainbow rims change
+-- colour from Lua, a few times a second, one write per rim rectangle.
+local RAINBOW = MUT_PAL[4]
+local rainbowRims = {} -- [drawing] = { { rim frame, hue offset } }
+local MUT_LOOK = { -- by mutation name; Normal has none. glow = the world light and particles
+	Gold = { tint = hex("FFE39A"), rim = hex("FF9F0A"), shine = true, sparkle = hex("FFF6C2"), glow = hex("FFD84A") },
+	Diamond = { tint = hex("D4F4FF"), rim = hex("5CD8FF"), shine = true, sparkle = WHITE, glow = hex("9EEBFF") },
+	Rainbow = { spin = true, sparkle = WHITE, glow = hex("FF7AE6") },
+	Matrix = { tint = hex("7DFF9E"), rim = hex("2BE36A"), rain = true, glow = hex("3CFF6E") },
+}
+local function mutationFx(drawing, m)
+	local mut = Config.MUTATIONS[m or 1]
+	local look = mut and MUT_LOOK[mut.name]
+	if not look then return drawing end
+	local tweens = {}
+	local function loop(o, info, goal)
+		if reduced then return end
+		local tw = TweenService:Create(o, info, goal)
+		tw:Play()
+		table.insert(tweens, tw)
+	end
+	local rims, t = {}, look.tint
+	for _, o in drawing:GetChildren() do
+		if o.ClassName == "Frame" and o.ZIndex == 1 then
+			local off = o.Position.X.Scale * 0.8 + o.Position.Y.Scale * 0.4 -- hue drifts diagonally across the rim
+			o.BackgroundColor3 = look.rim or Color3.fromHSV(off % 1, 0.75, 1)
+			table.insert(rims, { o, off })
+		elseif o.ClassName == "Frame" and o.ZIndex == 2 and t then
+			local c = o.BackgroundColor3
+			o.BackgroundColor3 = Color3.new(c.R * t.R, c.G * t.G, c.B * t.B)
+		end
+	end
+	if look.spin and not reduced then rainbowRims[drawing] = rims end
+	if look.sparkle then -- twinkling diamond-shaped glints
+		for _ = 1, 6 do
+			local sp = new("Frame", { Name = "Sparkle", AnchorPoint = Vector2.new(0.5, 0.5), Rotation = 45, BackgroundColor3 = look.sparkle, ZIndex = 20,
+				Position = S(0.12 + math.random() * 0.76, 0.12 + math.random() * 0.76), Size = reduced and S(0.04, 0.04) or S(0, 0) }, drawing)
+			new("UIAspectRatioConstraint", {}, sp)
+			loop(sp, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, -1, true, 0.6 + math.random() * 1.8), { Size = S(0.11, 0.11) })
+		end
+	end
+	if look.rain then -- falling 1s and 0s behind the animal, spilling a little past its edges
+		local aura = new("Frame", { Name = "Aura", BackgroundTransparency = 1, Position = S(-0.12, -0.12), Size = S(1.24, 1.24), ZIndex = 0, ClipsDescendants = true }, drawing)
+		local n = 14
+		for i = 1, n do
+			local bits = table.create(14)
+			for j = 1, 14 do bits[j] = math.random(0, 1) end
+			local edge = math.abs((i - 0.5) / n - 0.5) * 2 -- 0 in the middle, 1 at the sides: the aura fades out sideways
+			local col = table.concat(bits, "\n")
+			-- two copies of the column, 2x tall, slid down by one copy and looped: seamless
+			local l = new("TextLabel", { Name = "Bits", BackgroundTransparency = 1, Font = Enum.Font.Code, TextScaled = true, Text = col .. "\n" .. col,
+				TextColor3 = hex("3CFF6E"), TextTransparency = 0.1 + edge * 0.6 + math.random() * 0.15, Position = U((i - 1) / n, 0, -1, 0), Size = S(1 / n, 2), ZIndex = 0 }, aura)
+			loop(l, TweenInfo.new(1.8 + math.random() * 1.6, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), { Position = U((i - 1) / n, 0, 0, 0) })
+		end
+	end
+	if #tweens > 0 then drawing.Destroying:Once(function() for _, tw in tweens do tw:Cancel() end end) end
+	return drawing
+end
+local rainbowWait = 0
+RunService.Heartbeat:Connect(function(dt)
+	rainbowWait -= dt
+	if rainbowWait > 0 then return end
+	rainbowWait = 1 / 12
+	local t = os.clock() * 0.3
+	for d, rims in rainbowRims do
+		if not d.Parent then rainbowRims[d] = nil continue end
+		for _, r in rims do r[1].BackgroundColor3 = Color3.fromHSV((t + r[2]) % 1, 0.75, 1) end
 	end
 end)
 
@@ -329,7 +404,8 @@ end
 local function close(name)
 	if current == name then open(name) end
 end
-local function window(name, title, iconKey, w, h)
+local function window(name, title, iconKey, w, h, rim) -- rim: { top, middle, bottom } colours of the frame (default blue)
+	rim = rim or { hex("5CE6FF"), hex("0A86F0"), hex("0743B0") }
 	local root = scaled(new("Frame", { Name = name, AnchorPoint = CENTER, Position = S(0.5, 0.53), Size = O(w, h), BackgroundTransparency = 1, Visible = false, ZIndex = 10 }, gui))
 	local stage = new("Frame", { Name = "Stage", BackgroundTransparency = 1, Size = S(1, 1) }, root)
 	local pop = new("UIScale", { Name = "Pop" }, stage) -- separate from the fit scale, so a resize mid-pop can't leave a wrong size
@@ -338,8 +414,8 @@ local function window(name, title, iconKey, w, h)
 	-- rim: bright blue frame whose top is a header band (gloss strip, shine streaks, faint paws); the content sits in a dark recessed well
 	local sheet = round(new("Frame", { Name = "Sheet", Size = S(1, 1), BackgroundColor3 = WHITE }, stage), 16)
 	ink(sheet, 5)
-	new("UIGradient", { Rotation = 90, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, hex("5CE6FF")), ColorSequenceKeypoint.new(55 / h, hex("0A86F0")),
-		ColorSequenceKeypoint.new(1, hex("0743B0")) }) }, sheet)
+	new("UIGradient", { Rotation = 90, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, rim[1]), ColorSequenceKeypoint.new(55 / h, rim[2]),
+		ColorSequenceKeypoint.new(1, rim[3]) }) }, sheet)
 	studs(sheet, 0.72, O(50, 46), 15)
 	round(new("Frame", { Name = "Gloss", BackgroundColor3 = WHITE, BackgroundTransparency = 0.55, Position = O(18, 5), Size = U(1, -36, 0, 7) }, sheet), 4)
 	for i, x in { 250, 228 } do
@@ -377,9 +453,26 @@ Remotes.State.OnClientEvent:Connect(function(s)
 end)
 
 ----- buying -----
+-- Robux items that change drawing odds count as paid random items: players whose region restricts those can't buy them.
+-- Until PolicyService answers, assume restricted.
+local LUCK_ITEMS = { Luck2x = true, LuckBoost = true, StarterPack = true }
+local randomRestricted, policyKnown = true, false
+task.spawn(function()
+	for attempt = 1, 5 do
+		local ok, info = pcall(PolicyService.GetPolicyInfoForPlayerAsync, PolicyService, player)
+		if ok and info then
+			randomRestricted, policyKnown = info.ArePaidRandomItemsRestricted == true, true
+			return
+		end
+		task.wait(attempt * 2)
+	end
+end)
 local function buy(kind, key)
 	local id = (kind == "pass" and Config.PASSES or Config.PRODUCTS)[key]
 	if not id or id == 0 then return toast("Coming soon!") end
+	if LUCK_ITEMS[key] and randomRestricted then
+		return toast(policyKnown and "Sorry, this item is unavailable in your region" or "Checking if this item is available, try again in a moment")
+	end
 	if kind == "pass" then MarketplaceService:PromptGamePassPurchase(player, id) else MarketplaceService:PromptProductPurchase(player, id) end
 end
 local passButtons = {}
@@ -396,6 +489,8 @@ local function priceButton(parent, kind, key, size, pos, ts, prefix)
 	if id and id ~= 0 then
 		task.spawn(function()
 			local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, id, kind == "pass" and Enum.InfoType.GamePass or Enum.InfoType.Product)
+			while LUCK_ITEMS[key] and not policyKnown and b.Parent do task.wait(1) end
+			if LUCK_ITEMS[key] and randomRestricted then return setLabel(b, "N/A") end
 			setLabel(b, ok and info and info.PriceInRobux and tostring(info.PriceInRobux) or "BUY")
 		end)
 	else
@@ -485,25 +580,56 @@ ProximityPromptService.PromptTriggered:Connect(function(prompt)
 end)
 
 ----- Odds -----
+-- Roblox's paid random items policy: Robux luck items change these odds, so every outcome is listed with its real
+-- percentage (4 significant digits, summing to 100%), the 2x column shows what a luck item would change, and the
+-- mutation odds follow the live weather.
+local function pctText(p)
+	local v = p * 100
+	if v <= 0 then return "0%" end
+	if v >= 99.995 then return "100%" end
+	local digits = math.max(0, 3 - math.floor(math.log10(v)))
+	return (string.format("%." .. digits .. "f", v):gsub("%.?0+$", "")) .. "%"
+end
 do
-	local body = window("Odds", "Odds", "rainbowclover", 560, 500)
-	local head = label(body, "", 24, { Position = O(0, 0), Size = O(520, 32) })
-	local rows = {}
+	local body = window("Odds", "Odds", "rainbowclover", 800, 600)
+	local head = label(body, "", 24, { Position = O(0, 0), Size = O(760, 32) })
+	local function columns(y, list)
+		for _, c in list do label(body, c[1], 18, { Position = O(c[2], y), Size = O(c[3], 24), TextColor3 = C.yellow }) end
+	end
+	columns(40, { { "RARITY", 0, 150 }, { "NOW", 150, 110 }, { "WITH 2x LUCK", 260, 130 }, { "INCOME", 390, 100 }, { "MUTATION", 516, 130 }, { "NOW", 646, 110 } })
+	local now, boosted, mrows = {}, {}, {}
 	for i, info in Config.RARITIES do
-		local f, face = card(body, RARITY_PAL[i], O(520, 56), O(0, 40 + (i - 1) * 64), 12)
-		label(face, info.name:upper(), 24, { Position = O(16, 0), Size = U(0, 220, 1, 0), TextXAlignment = LEFT })
-		rows[i] = label(face, "", 24, { Position = O(220, 0), Size = U(0, 150, 1, 0), TextColor3 = C.yellow })
-		label(face, "$" .. Config.format(info.rate) .. "/s", 22, { Position = O(370, 0), Size = U(0, 136, 1, 0), TextXAlignment = RIGHT, TextColor3 = C.cash })
+		local f, face = card(body, RARITY_PAL[i], O(496, 56), O(0, 72 + (i - 1) * 64), 12)
+		label(face, info.name:upper(), 22, { Position = O(12, 0), Size = U(0, 140, 1, 0), TextXAlignment = LEFT })
+		now[i] = label(face, "", 22, { Position = O(150, 0), Size = U(0, 110, 1, 0), TextColor3 = C.yellow })
+		boosted[i] = label(face, "", 22, { Position = O(260, 0), Size = U(0, 130, 1, 0), TextColor3 = C.cash })
+		label(face, "$" .. Config.format(info.rate) .. "/s", 20, { Position = O(390, 0), Size = U(0, 96, 1, 0), TextXAlignment = RIGHT, TextColor3 = C.cash })
 		f.Name = info.name
 	end
+	for i, m in Config.MUTATIONS do
+		local f, face = card(body, MUT_PAL[i], O(244, 56), O(516, 72 + (i - 1) * 64), 12)
+		label(face, m.name:upper() .. " x" .. m.mult, 20, { Position = O(12, 0), Size = U(0, 130, 1, 0), TextXAlignment = LEFT })
+		mrows[i] = label(face, "", 22, { Position = O(130, 0), Size = U(0, 104, 1, 0), TextColor3 = C.yellow })
+		f.Name = m.name
+	end
+	local weatherNote = label(body, "", 18, { Position = O(516, 72 + #Config.MUTATIONS * 64), Size = O(244, 48), TextWrapped = true })
+	label(body, "Every drawing rolls a rarity and a mutation separately. Probabilities are rounded; total of displayed individual probabilities may not equal 100%.", 16,
+		{ Position = O(0, 470), Size = O(760, 48), TextWrapped = true })
 	refreshers.Odds = function()
 		local luck = player:GetAttribute("Luck") or 1
 		head.Text = "Your odds for each drawing at <font color=\"#FFE600\">" .. luck .. "x</font> luck"
+		local b = Config.chances(luck * 2)
 		for i, p in Config.chances(luck) do
-			local pct = p * 100
-			rows[i].Text = (pct >= 1 and string.format("%.1f", pct) or string.format("%.3f", pct)) .. "%"
+			now[i].Text = pctText(p)
+			boosted[i].Text = pctText(b[i])
 		end
+		local weather = Zoo:GetAttribute("Weather")
+		for i, p in Config.mutationChances(weather) do mrows[i].Text = pctText(p) end
+		weatherNote.Text = weather and (weather .. " weather is on right now") or "Weather can boost a mutation while it lasts"
 	end
+	local function live() if current == "Odds" then refreshers.Odds() end end
+	player:GetAttributeChangedSignal("Luck"):Connect(live)
+	Zoo:GetAttributeChangedSignal("Weather"):Connect(live)
 end
 
 ----- Upgrades -----
@@ -606,7 +732,8 @@ do
 	rays(boost, 210, O(96, 76), WHITE)
 	sticker(boost, "luck", 120, O(96, 76), true)
 	label(boost, "2x Luck Boost", 38, { Position = O(190, 18), Size = O(380, 48), TextXAlignment = LEFT })
-	label(boost, Config.LUCK_BOOST_MINUTES .. " minutes of 2x luck. Buy more to stack the time!", 20, { Position = O(192, 74), Size = O(380, 52), TextXAlignment = LEFT, TextWrapped = true })
+	label(boost, Config.LUCK_BOOST_MINUTES .. " minutes of 2x luck. Buy more to stack the time!", 20, { Position = O(192, 74), Size = O(260, 52), TextXAlignment = LEFT, TextWrapped = true })
+	button(boost, "ODDS", P.blue, O(110, 60), O(515, 76), function() open("Odds") end, { text = 24 })
 	priceButton(boost, "product", "LuckBoost", O(230, 70), O(690, 76), 32)
 	y += 176
 
@@ -616,7 +743,8 @@ do
 	rays(pack, 210, O(96, 76), C.yellow)
 	sticker(pack, "chest", 124, O(96, 76), true)
 	label(pack, "Starter Pack", 38, { Position = O(190, 18), Size = O(380, 48), TextXAlignment = LEFT })
-	label(pack, "$" .. Config.format(Config.STARTER_PACK.cash) .. " cash + " .. Config.STARTER_PACK.luckMin .. " min of 2x luck", 20, { Position = O(192, 74), Size = O(380, 30), TextXAlignment = LEFT })
+	label(pack, "$" .. Config.format(Config.STARTER_PACK.cash) .. " cash + " .. Config.STARTER_PACK.luckMin .. " min of 2x luck", 20, { Position = O(192, 74), Size = O(260, 52), TextXAlignment = LEFT, TextWrapped = true })
+	button(pack, "ODDS", P.blue, O(110, 60), O(515, 76), function() open("Odds") end, { text = 24 })
 	priceButton(pack, "product", "StarterPack", O(230, 70), O(690, 76), 32)
 	y += 176
 
@@ -717,7 +845,7 @@ do
 		thumb:ClearAllChildren()
 		round(thumb, 12)
 		ink(thumb, 4)
-		Render.draw(thumb, a.d, true, 3)
+		mutationFx(Render.draw(thumb, a.d, true, 3), a.m)
 		setLabel(equipBtn, a.eq and "UNEQUIP" or "EQUIP")
 		paint(equipBtn, a.eq and P.red or P.lime)
 		releaseBtn:SetAttribute("Sure", nil)
@@ -748,7 +876,7 @@ do
 				f.BackgroundColor3 = DISPLAY -- dark so the drawing reads; the outline carries the rarity colour
 				f.Outline.Color = Config.RARITIES[a.r].color
 				local t = new("Frame", { BackgroundTransparency = 1, Position = O(4, 10), Size = O(56, 40) }, f)
-				Render.draw(t, a.d, true, 3)
+				mutationFx(Render.draw(t, a.d, true, 3), a.m)
 			elseif unlocked then
 				f.BackgroundColor3 = WHITE
 				studs(f, 0.7, nil, 9)
@@ -764,7 +892,7 @@ do
 				selected = a.id
 				refreshers.Inventory()
 			end, { lip = 5 }, (a.eq and 0 or 1000) - a.r * 100 + i)
-			Render.draw(display(b.Face, O(120, 84), O(9, 8)), a.d, true, 3)
+			mutationFx(Render.draw(display(b.Face, O(120, 84), O(9, 8)), a.d, true, 3), a.m)
 			label(b.Face, a.d.n, 20, { Position = O(0, 96), Size = O(138, 24) })
 			label(b.Face, "$" .. Config.format(Config.income(a)) .. "/s", 16, { Position = O(0, 120), Size = O(138, 20), TextColor3 = C.yellow })
 			if (a.m or 1) > 1 then -- mutation tag in the corner
@@ -1312,7 +1440,7 @@ do
 			if not a.eq then spare += price end
 			local holder = new("Frame", { BackgroundTransparency = 1, Size = O(700, 98), LayoutOrder = (a.eq and 1000 or 0) + i }, list)
 			local _, face = card(holder, RARITY_PAL[a.r], O(696, 90), O(0, 0), 14)
-			Render.draw(display(face, O(110, 70), O(10, 7)), a.d, true, 3)
+			mutationFx(Render.draw(display(face, O(110, 70), O(10, 7)), a.d, true, 3), a.m)
 			local m = Config.MUTATIONS[a.m or 1]
 			label(face, a.d.n, 28, { Position = O(134, 6), Size = O(280, 36), TextXAlignment = LEFT }, true)
 			label(face, ((a.m or 1) > 1 and m.name:upper() .. " " or "") .. Config.RARITIES[a.r].name:upper() .. "  ·  $" .. Config.format(Config.income(a)) .. "/s" .. (a.eq and "  ·  IN ZOO" or ""),
@@ -1452,7 +1580,7 @@ do
 		TweenService:Create(blur, TweenInfo.new(0.25), { Size = 14 }):Play()
 		nameL.Text = res.name
 		art:ClearAllChildren()
-		Render.draw(art, res.d, true, 2)
+		mutationFx(Render.draw(art, res.d, true, 2), res.m)
 		ring.Color = WHITE
 		raysF.Visible = false
 		for _, b in bars do b.Size = U(0, 0, 1, 0) end
@@ -1523,6 +1651,25 @@ local function wtext(parent, str, props)
 	return l
 end
 local animals = {}
+-- a mutated cutout in the world (zoo pens, race mounts): its drawings get the mutation look, plus a light and particles
+local function cutoutFx(part)
+	local m = part:GetAttribute("Mutation") or 1
+	local mut = Config.MUTATIONS[m]
+	local look = mut and MUT_LOOK[mut.name]
+	if not look then return end
+	if look.rain then part.Size *= Vector3.new(1.25, 1.25, 1) end -- room on the cutout for the digit aura; the drawing shrinks back to its own size
+	for _, sg in part:GetChildren() do
+		if sg:IsA("SurfaceGui") then
+			if look.rain then sg.Drawing.Size = S(0.8, 0.8) end
+			mutationFx(sg.Drawing, m)
+		end
+	end
+	new("PointLight", { Color = look.glow, Range = 8, Brightness = 1 }, part)
+	new("ParticleEmitter", { Color = look.spin and RAINBOW or ColorSequence.new(look.glow), LightEmission = 1, Rate = 6, Lifetime = NumberRange.new(1, 1.6),
+		Speed = NumberRange.new(1.5, 3), EmissionDirection = Enum.NormalId.Top, SpreadAngle = Vector2.new(25, 25), Size = NumberSequence.new(0.3, 0),
+		Transparency = NumberSequence.new(0.2, 1) }, part)
+end
+
 local function addAnimal(part)
 	if animals[part] or not part:IsDescendantOf(workspace) then return end
 	local ok, design = pcall(HttpService.JSONDecode, HttpService, part:GetAttribute("Design"))
@@ -1542,9 +1689,11 @@ local function addAnimal(part)
 	wtext(tagGui, design.n or "", { Size = S(1, 0.5) })
 	local info = Config.RARITIES[rarity]
 	local mut = Config.MUTATIONS[part:GetAttribute("Mutation") or 1]
+	cutoutFx(part)
 	if info then
 		local prefix = mut and mut.name ~= "Normal" and mut.name:upper() .. " " or ""
-		wtext(tagGui, prefix .. info.name:upper() .. "  $" .. Config.format(part:GetAttribute("Income") or info.rate) .. "/s", { Size = S(1, 0.42), Position = S(0, 0.52), TextColor3 = prefix ~= "" and mut.color or info.color })
+		local tag = wtext(tagGui, prefix .. info.name:upper() .. "  $" .. Config.format(part:GetAttribute("Income") or info.rate) .. "/s", { Size = S(1, 0.42), Position = S(0, 0.52), TextColor3 = prefix ~= "" and mut.color or info.color })
+		if mut and mut.name == "Rainbow" then tag.TextColor3 = WHITE new("UIGradient", { Color = RAINBOW }, tag) end
 	end
 	local at = pen.CFrame:PointToObjectSpace(part.Position)
 	local yaw = math.random() < 0.5 and 0 or math.pi
@@ -1584,6 +1733,638 @@ RunService.Heartbeat:Connect(function(dt)
 		part.CFrame = a.pen.CFrame * CFrame.new(a.x, a.y + hop, a.z) * CFrame.Angles(0, a.yaw, 0)
 	end
 end)
+
+----- server events everyone sees: admin boost events and countdowns as strips under the weather banner, and admin announcements -----
+-- topStack holds the weather banner and these strips in one column at the top; toasts drop under whatever it shows
+local topStack = scaled(new("Frame", { Name = "TopStack", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 6), Size = O(560, 320), BackgroundTransparency = 1 }, hud))
+local topLayout = new("UIListLayout", { Padding = UDim.new(0, 6), HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }, topStack)
+do
+	local function strip(order, icon, col)
+		local f = new("Frame", { Name = "Strip", Size = O(460, 56), BackgroundColor3 = col:Lerp(BLACK, 0.55), Visible = false, LayoutOrder = order }, topStack)
+		round(f, 14)
+		ink(f, 4)
+		local face = round(new("Frame", { Name = "Face", Size = U(1, 0, 1, -5) }, f), 13)
+		grad(face, { col:Lerp(WHITE, 0.35), col })
+		studs(face, 0.7, nil, 13)
+		sticker(face, icon, 44, O(32, 25), true)
+		local title = label(face, "", 24, { Position = O(62, 0), Size = U(1, -170, 1, 0), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+		local time = label(face, "", 26, { Position = U(1, -112, 0, 0), Size = U(0, 100, 1, 0), TextXAlignment = RIGHT, TextColor3 = C.yellow })
+		local pop = new("UIScale", { Name = "Pop" }, f)
+		return { f = f, title = title, time = time, pop = pop }
+	end
+	local function show(s, on)
+		if on == s.f.Visible then return end
+		s.f.Visible = on
+		if on then
+			s.pop.Scale = 0.6
+			TweenService:Create(s.pop, BACK, { Scale = 1 }):Play()
+		end
+	end
+	local strips = {}
+	for i, e in Config.BOOST_EVENTS do
+		local s = strip(1 + i, e.icon, e.color)
+		s.title.Text = e.text .. " FOR EVERYONE"
+		strips[i] = s
+		Zoo:GetAttributeChangedSignal(e.attr):Connect(function()
+			local left = (Zoo:GetAttribute(e.attr) or 0) - workspace:GetServerTimeNow()
+			if left > 1 then toast("ADMIN EVENT! " .. e.text .. " for everyone for " .. fmtTime(left) .. "!", e.color) end
+		end)
+	end
+	local timer = strip(10, "clock", hex("FF4FD8"))
+	local timerDone = true
+	task.spawn(function()
+		while true do
+			local now = workspace:GetServerTimeNow()
+			for i, e in Config.BOOST_EVENTS do
+				local left = (Zoo:GetAttribute(e.attr) or 0) - now
+				show(strips[i], left > 0)
+				strips[i].time.Text = fmtTime(left)
+			end
+			local ends = Zoo:GetAttribute("TimerEnds")
+			local left = (ends or 0) - now
+			if ends and left > 0 then
+				timer.title.Text = Zoo:GetAttribute("TimerTitle") or "Countdown"
+				timer.time.Text = fmtTime(math.ceil(left))
+				timerDone = false
+			elseif not timerDone then
+				timerDone = true
+				if ends then toast((Zoo:GetAttribute("TimerTitle") or "Countdown") .. ": NOW!", C.yellow) end
+			end
+			show(timer, ends ~= nil and left > 0)
+			local h = topLayout.AbsoluteContentSize.Y
+			toasts.Position = U(0.5, 0, 0, h > 4 and h + 14 or 4) -- toasts drop under the banners
+			task.wait(0.25)
+		end
+	end)
+
+	-- announcement: a big card that pops in over the upper middle of the screen for AnnounceSeconds
+	local holder = scaled(new("Frame", { Name = "Announcement", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0.17, 0), Size = O(760, 150),
+		BackgroundTransparency = 1, Visible = false, ZIndex = 30 }, gui)) -- on gui, not hud, so it shows over open windows
+	local card0 = new("Frame", { Name = "Card", Size = S(1, 1), BackgroundColor3 = P.red[3] }, holder)
+	round(card0, 18)
+	ink(card0, 5)
+	local face = round(new("Frame", { Name = "Face", Size = U(1, 0, 1, -7) }, card0), 17)
+	grad(face, { hex("FF5A3D"), hex("D8000F") })
+	studs(face, 0.7, nil, 17)
+	rays(face, 190, O(86, 70), C.yellow)
+	local news = sticker(face, "newspaper", 104, O(86, 70), true)
+	-- the announcer's Roblox headshot replaces the newspaper; if it can't load, the newspaper stays
+	local avatar = round(new("ImageLabel", { Name = "Avatar", AnchorPoint = CENTER, Position = O(86, 70), Size = O(112, 112), BackgroundColor3 = hex("3A4A72"), Visible = false }, face), 56)
+	ink(avatar, 4)
+	local head = label(face, "ANNOUNCEMENT", 26, { Position = O(160, 8), Size = O(560, 32), TextXAlignment = LEFT })
+	goldText(head)
+	local text = label(face, "", 30, { Position = O(160, 38), Size = O(580, 76), TextXAlignment = LEFT, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true,
+		TextScaled = true }, true)
+	new("UITextSizeConstraint", { MaxTextSize = 30, MinTextSize = 16 }, text)
+	local from = label(face, "", 20, { Position = O(160, 112), Size = O(580, 26), TextXAlignment = RIGHT, TextColor3 = C.yellow })
+	local pop = new("UIScale", { Name = "Pop" }, card0)
+	local shownId = Zoo:GetAttribute("AnnounceId") -- an announcement made before you joined is not replayed
+	Zoo:GetAttributeChangedSignal("AnnounceId"):Connect(function()
+		local id = Zoo:GetAttribute("AnnounceId")
+		if id == shownId then return end
+		shownId = id
+		text.Text = Zoo:GetAttribute("AnnounceText") or ""
+		avatar.Visible, news.Visible = false, true
+		local uid = Zoo:GetAttribute("AnnounceUserId")
+		if uid then
+			task.spawn(function()
+				local ok, img = pcall(Players.GetUserThumbnailAsync, Players, uid, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+				if ok and shownId == id then avatar.Image, avatar.Visible, news.Visible = img, true, false end
+			end)
+		end
+		from.Text = "- " .. (Zoo:GetAttribute("AnnounceFrom") or "Admin")
+		holder.Visible = true
+		pop.Scale = 0.5
+		TweenService:Create(pop, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		task.delay(Zoo:GetAttribute("AnnounceSeconds") or 8, function()
+			if shownId ~= id then return end -- a newer announcement took over
+			local tw = TweenService:Create(pop, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0.5 })
+			tw.Completed:Once(function() if shownId == id then holder.Visible = false end end)
+			tw:Play()
+		end)
+	end)
+end
+
+----- weather: the server picks random weathers (ZooWeather); every client tweens the sky, drops the falling code and shows the banner -----
+do
+	local banner = new("Frame", { Name = "Weather", Size = O(460, 78), BackgroundColor3 = BLACK, Visible = false, LayoutOrder = 1 }, topStack)
+	round(banner, 16)
+	ink(banner, 4)
+	local face = round(new("Frame", { Name = "Face", Size = U(1, 0, 1, -5) }, banner), 15)
+	local faceGrad = grad(face, P.lime)
+	studs(face, 0.65, nil, 15)
+	local iconSlot = new("Frame", { BackgroundTransparency = 1, Size = O(76, 72) }, face)
+	local title = label(face, "", 30, { Position = O(76, 2), Size = O(374, 38), TextXAlignment = LEFT })
+	local sub = label(face, "", 20, { Position = O(78, 42), Size = O(374, 26), TextXAlignment = LEFT, TextColor3 = C.yellow })
+
+	-- falling code: columns of characters behind the HUD, bright at the bottom (the head) and fading up
+	local rainGui = new("ScreenGui", { Name = "ZooWeatherRain", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = -1, Enabled = false }, player:WaitForChild("PlayerGui"))
+	local drops = {}
+	for i = 1, 26 do
+		local l = new("TextLabel", { BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 20, TextTransparency = 0.3, AnchorPoint = Vector2.new(0.5, 1),
+			Size = O(22, 340), TextYAlignment = Enum.TextYAlignment.Bottom }, rainGui)
+		new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0) }, l)
+		drops[i] = { l = l, x = 0, y = 2, v = 0 }
+	end
+	local function resetDrop(d, w, anywhere)
+		local s = table.create(16, "")
+		for k = 1, 16 do
+			local n = math.random(#w.rain)
+			s[k] = w.rain:sub(n, n)
+		end
+		d.l.Text, d.l.TextColor3 = table.concat(s, "\n"), w.color
+		d.x, d.y, d.v = math.random(), anywhere and math.random() * 1.5 or 0, 0.25 + math.random() * 0.35
+	end
+
+	-- Lighting: remember each property's own value the first time a weather changes it, and tween back to it after
+	local saved = {}
+	local function applyLook(look)
+		local goals = {}
+		for inst, props in saved do goals[inst] = table.clone(props) end
+		for name, props in look or {} do
+			local inst = name == "Lighting" and Lighting or Lighting:FindFirstChild(name)
+			if inst then
+				saved[inst] = saved[inst] or {}
+				goals[inst] = goals[inst] or {}
+				for k, v in props do
+					if saved[inst][k] == nil then saved[inst][k] = inst[k] end
+					goals[inst][k] = v
+				end
+			end
+		end
+		for inst, g in goals do TweenService:Create(inst, TweenInfo.new(3, Enum.EasingStyle.Sine), g):Play() end
+	end
+
+	local weatherNow
+	local function refresh()
+		local w = Config.weather(Zoo:GetAttribute("Weather"))
+		applyLook(w and w.look)
+		banner.Visible = w ~= nil
+		rainGui.Enabled = w ~= nil and w.rain ~= nil and not reduced
+		if w then
+			banner.BackgroundColor3 = w.color:Lerp(BLACK, 0.5)
+			faceGrad.Color = ColorSequence.new(w.color:Lerp(WHITE, 0.4), w.color)
+			iconSlot:ClearAllChildren()
+			sticker(iconSlot, w.icon, 58, S(0.5, 0.5), true)
+			title.Text = w.name:upper() .. " WEATHER"
+			if w.rain then for _, d in drops do resetDrop(d, w, true) end end
+			toast(w.name:upper() .. " WEATHER! " .. w.mutation .. " mutations are way more likely!", w.color)
+		elseif weatherNow then
+			toast("The weather cleared up.")
+		end
+		weatherNow = w
+	end
+	Zoo:GetAttributeChangedSignal("Weather"):Connect(refresh)
+	refresh()
+
+	RunService.RenderStepped:Connect(function(dt)
+		if not rainGui.Enabled then return end
+		for _, d in drops do
+			d.y += d.v * dt
+			if d.y > 1.6 then resetDrop(d, weatherNow) end
+			d.l.Position = S(d.x, d.y)
+		end
+	end)
+	task.spawn(function()
+		while true do
+			if weatherNow then
+				local left = (Zoo:GetAttribute("WeatherEnds") or 0) - workspace:GetServerTimeNow()
+				sub.Text = string.format("%d%% %s mutation  ·  %s left", math.round(weatherNow.chance * 100), weatherNow.mutation, fmtTime(left))
+			end
+			task.wait(0.5)
+		end
+	end)
+end
+
+----- Admin Panel: only built for players the server marks Admin. Every button goes through Remotes.Admin, which re-checks admin on the server. -----
+do
+	local SLATE = { hex("7A8196"), hex("3A3F52"), hex("1A1D27") } -- idle tabs and off toggles
+	local RED_RIM = { hex("FF6A5C"), hex("E0101C"), hex("8E0610") }
+	local CW, CH = 744, 534 -- content area right of the tabs
+	local built = false
+
+	local function build()
+		built = true
+		local remote = Remotes:WaitForChild("Admin")
+		local function call(action, payload)
+			local ok, good, msg, data = pcall(remote.InvokeServer, remote, action, payload or {})
+			if not ok then
+				toast("Admin request failed", C.red)
+				return false
+			end
+			if msg then toast(msg, good and C.cash or C.red) end
+			return good, data
+		end
+
+		local body = window("Admin", "Admin Panel", "hammer", 1000, 600, RED_RIM)
+
+		-- kit bits only the panel uses
+		local function input(parent, size, pos, placeholder, text, digits)
+			local box = new("TextBox", { Size = size, Position = pos, BackgroundColor3 = DISPLAY, PlaceholderText = placeholder or "", Text = text or "", Font = FONT,
+				TextSize = 26, TextColor3 = WHITE, PlaceholderColor3 = hex("7D88A8"), ClearTextOnFocus = false, TextTruncate = Enum.TextTruncate.AtEnd }, parent)
+			round(box, 10)
+			ink(box, 3)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, box)
+			if digits then
+				box:GetPropertyChangedSignal("Text"):Connect(function()
+					local clean = box.Text:gsub("%D", ""):sub(1, 6)
+					if clean ~= box.Text then box.Text = clean end
+				end)
+			end
+			return box
+		end
+		local function caption(parent, str, pos, w)
+			return label(parent, str, 24, { Position = pos, Size = O(w or 300, 32), TextXAlignment = LEFT, TextColor3 = C.yellow })
+		end
+		local function title(parent, str)
+			label(parent, str, 36, { Position = O(0, 0), Size = O(CW, 44) })
+		end
+		local function mark(b, on) -- the picked chip or tile gets a white outline
+			b.Outline.Color = on and WHITE or BLACK
+			b.Outline.Thickness = on and 5 or 4
+		end
+		local function scroller(parent, pos, size)
+			local s = new("ScrollingFrame", { Position = pos, Size = size, BackgroundTransparency = 1, ScrollBarThickness = 8, ScrollBarImageColor3 = hex("9A9A9A"),
+				TopImage = "", BottomImage = "", CanvasSize = U(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y }, parent)
+			return s
+		end
+
+		-- left: the tab column; right: one page per tab
+		local tabs, pages, refresh = {}, {}, {}
+		local active
+		local function show(name)
+			active = name
+			for n, b in tabs do
+				paint(b, n == name and P.green or SLATE)
+				pages[n].Visible = n == name
+			end
+			if refresh[name] then task.spawn(refresh[name]) end
+		end
+		local TAB_LIST = { { "Players", "group" }, { "Give", "gift" }, { "Events", "cloud" }, { "Announce", "newspaper" }, { "Timer", "clock" }, { "Server", "gear" } }
+		for i, t in TAB_LIST do
+			tabs[t[1]] = button(body, t[1], SLATE, O(196, 60), O(100, 34 + (i - 1) * 72), function() show(t[1]) end,
+				{ icon = t[2], iconSize = 38, text = 26, name = t[1] .. "Tab" })
+			pages[t[1]] = new("Frame", { Name = t[1], Position = O(216, 0), Size = O(CW, CH), BackgroundTransparency = 1, Visible = false }, body)
+		end
+		label(body, "Only admins see this", 18, { Position = O(0, 34 + 6 * 72 - 20), Size = O(200, 24), TextColor3 = hex("9AA6C8") })
+		new("Frame", { Name = "Divider", BackgroundColor3 = BLACK, BackgroundTransparency = 0.5, Position = O(205, 0), Size = O(3, CH) }, body)
+
+		----- Players -----
+		local roster = {} -- last list from the server
+		local target -- userId the Give tab acts on (nil = me)
+		local renderGive -- set by the Give tab
+		do
+			local page = pages.Players
+			local count = label(page, "", 30, { Position = O(0, 0), Size = O(500, 44), TextXAlignment = LEFT })
+			button(page, "REFRESH", P.blue, O(150, 46), O(CW - 79, 22), function() task.spawn(refresh.Players) end, { text = 22 })
+			local list = scroller(page, O(0, 56), O(CW, CH - 56))
+			new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+			new("UIPadding", { PaddingRight = UDim.new(0, 12), PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 8) }, list)
+			local rows = {}
+			local function row(p, i)
+				local f = rows[p.userId]
+				if f then f:Destroy() end
+				f = round(new("Frame", { Size = U(1, 0, 0, 80), BackgroundColor3 = i % 2 == 1 and hex("2B3B70") or hex("24325F"), LayoutOrder = i }, list), 14)
+				ink(f, 3, p.userId == player.UserId and C.yellow or BLACK)
+				rows[p.userId] = f
+				local av = round(new("ImageLabel", { Size = O(62, 62), Position = O(9, 9), BackgroundColor3 = hex("3A4A72"),
+					Image = "rbxthumb://type=AvatarHeadShot&id=" .. p.userId .. "&w=150&h=150" }, f), 31)
+				ink(av, 3)
+				local name = label(f, p.displayName, 26, { Position = O(82, 6), Size = O(250, 34), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+				if p.admin then name.TextColor3 = hex("FF8A80") end
+				label(f, "@" .. p.name, 16, { Position = O(83, 38), Size = O(250, 20), TextXAlignment = LEFT, TextColor3 = hex("B8C2E0"), TextTruncate = Enum.TextTruncate.AtEnd })
+				label(f, "$" .. Config.format(p.cash) .. "  ·  <font color=\"#6BFF3A\">+$" .. Config.format(p.rate) .. "/s</font>  ·  " .. p.animals .. " animals", 16,
+					{ Position = O(83, 56), Size = O(260, 20), TextXAlignment = LEFT, TextColor3 = C.yellow })
+				local x = 352
+				local function act(str, pal, w, cb)
+					local b = button(f, str, pal, O(w, 50), O(x + w / 2, 38), cb, { text = 20 })
+					x += w + 8
+					return b
+				end
+				act("GIVE", P.cyan, 84, function()
+					target = p.userId
+					show("Give")
+				end)
+				act("GO TO", P.blue, 86, function() call("player", { target = p.userId, op = "goto" }) end)
+				act("BRING", P.purple, 88, function() call("player", { target = p.userId, op = "bring" }) end)
+				local armed = false
+				local kick
+				kick = act("KICK", P.red, 78, function()
+					if not armed then -- first press arms it, the second within 3 seconds kicks
+						armed = true
+						setLabel(kick, "SURE?")
+						task.delay(3, function()
+							armed = false
+							if kick.Parent then setLabel(kick, "KICK") end
+						end)
+						return
+					end
+					if call("player", { target = p.userId, op = "kick" }) then task.delay(0.5, refresh.Players) end
+				end)
+				if p.admin then -- admins can't be kicked: a flat badge sits where KICK would be
+					kick.Visible = false
+					local badge = round(new("Frame", { AnchorPoint = CENTER, Position = O(x - 47, 38), Size = O(78, 40), BackgroundColor3 = P.red[2] }, f), 10)
+					ink(badge, 3)
+					label(badge, "ADMIN", 18, { Size = S(1, 1) })
+				end
+			end
+			refresh.Players = function()
+				local ok, data = call("players")
+				if not ok or not data then return end
+				roster = data.players
+				for id, f in rows do f:Destroy() rows[id] = nil end
+				for i, p in roster do row(p, i) end
+				count.Text = #roster .. (#roster == 1 and " player" or " players") .. " in this server"
+				if renderGive then renderGive() end
+				if refresh.ServerInfo then refresh.ServerInfo(data.info) end
+			end
+			task.spawn(function() -- keep cash and income fresh while the tab is open
+				while true do
+					task.wait(4)
+					if current == "Admin" and active == "Players" then refresh.Players() end
+				end
+			end)
+		end
+
+		----- Give -----
+		do
+			local page = pages.Give
+			local s = scroller(page, O(0, 0), O(CW, CH))
+			local c = new("Frame", { BackgroundTransparency = 1, Size = O(CW - 16, 640) }, s)
+			local W = CW - 16
+
+			-- who it goes to
+			local bar = sheetPanel(c, O(W, 76), O(0, 4))
+			local av = round(new("ImageLabel", { Size = O(58, 58), Position = O(10, 7), BackgroundColor3 = hex("3A4A72") }, bar), 29)
+			ink(av, 3)
+			caption(bar, "Giving to", O(80, 4), 200)
+			local who = label(bar, "", 30, { Position = O(80, 30), Size = O(330, 38), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+			button(bar, "ME", P.blue, O(80, 50), O(W - 236, 36), function()
+				target = nil
+				renderGive()
+			end, { text = 24 })
+			button(bar, "PICK PLAYER", P.cyan, O(170, 50), O(W - 99, 36), function() show("Players") end, { text = 22 })
+			local function targetId() return target or player.UserId end
+			local function give(kind, a, b, cc)
+				local ok = call("give", { target = targetId(), kind = kind, a = a, b = b, c = cc })
+				if ok then task.delay(0.3, refresh.Players) end
+				return ok
+			end
+
+			-- cash
+			local y = 90
+			caption(c, "CASH", O(0, y + 12), 90)
+			local cash = input(c, O(200, 52), O(90, y + 2), "1m, 2.5b, -500k", "1m")
+			for i, q in { "1M", "1B", "1T" } do
+				button(c, q, P.gold, O(64, 50), O(314 + (i - 1) * 70, y + 28), function() cash.Text = q:lower() end, { text = 22 })
+			end
+			button(c, "GIVE", P.lime, O(110, 52), O(W - 170, y + 28), function() give("cash", cash.Text) end, { text = 24, vivid = true })
+			button(c, "TAKE", P.red, O(100, 52), O(W - 55, y + 28), function()
+				local n = cash.Text:gsub("^%-", "")
+				give("cash", "-" .. n)
+			end, { text = 24 })
+
+			-- boosts
+			y += 70
+			caption(c, "BOOSTS", O(0, y + 12), 90)
+			local minutes = input(c, O(110, 52), O(90, y + 2), "min", "30", true)
+			label(c, "minutes", 20, { Position = O(206, y + 14), Size = O(80, 28), TextXAlignment = LEFT })
+			button(c, "2x LUCK", P.gold, O(170, 52), O(380, y + 28), function() give("luck", minutes.Text) end, { icon = "clover", iconSize = 32, text = 22 })
+			button(c, "2x MONEY", P.green, O(190, 52), O(570, y + 28), function() give("money", minutes.Text) end, { icon = "cash", iconSize = 32, text = 22, vivid = true })
+
+			-- animal: rarity, mutation, stars
+			y += 74
+			new("Frame", { BackgroundColor3 = C.line, BackgroundTransparency = 0.6, Size = O(W, 2), Position = O(0, y - 8) }, c)
+			caption(c, "ANIMAL", O(0, y), 200)
+			local pick = { r = 6, m = 1, st = 5 }
+			local function chipRow(yy, list, pals, key, w, text, icon)
+				local bs = {}
+				for i, e in list do
+					local pal = pals[i]
+					local rainbow = typeof(pal) == "ColorSequence"
+					local b
+					b = button(c, text(e, i), rainbow and P.pink or pal, O(w, 46), O(w / 2 + (i - 1) * (w + 8), yy + 23), function()
+						pick[key] = i
+						for j, o in bs do mark(o, j == i) end
+					end, { text = 20, vivid = true, icon = icon, iconSize = 26 })
+					if rainbow then b.Face.UIGradient.Color, b.Face.UIGradient.Rotation = pal, 0 end
+					bs[i] = b
+					mark(b, i == pick[key])
+				end
+			end
+			chipRow(y + 34, Config.RARITIES, RARITY_PAL, "r", 112, function(e) return e.name:upper() end)
+			chipRow(y + 88, Config.MUTATIONS, MUT_PAL, "m", 136, function(e) return e.name:upper() end)
+			chipRow(y + 142, { 1, 2, 3, 4, 5 }, { P.gold, P.gold, P.gold, P.gold, P.gold }, "st", 76, function(_, i) return tostring(i) end, "star")
+			button(c, "GIVE ANIMAL", P.lime, O(250, 54), O(W - 125, y + 165), function()
+				give("animal", tostring(pick.r), tostring(pick.m), tostring(pick.st))
+			end, { icon = "paw", iconSize = 34, text = 24, vivid = true })
+
+			-- game passes (a flag in their save, no purchase)
+			y += 206
+			new("Frame", { BackgroundColor3 = C.line, BackgroundTransparency = 0.6, Size = O(W, 2), Position = O(0, y - 8) }, c)
+			caption(c, "GAME PASSES", O(0, y), 300)
+			label(c, "Test flag in their save, no Robux", 16, { Position = O(W - 300, y + 4), Size = O(300, 24), TextXAlignment = RIGHT, TextColor3 = hex("9AA6C8") })
+			local passBtns = {}
+			local PASS_ORDER = { { "VIP", "crown" }, { "Money2x", "cash" }, { "Luck2x", "clover" } }
+			for i, pinfo in PASS_ORDER do
+				local key = pinfo[1]
+				local w = (W - 16) / 3
+				passBtns[key] = button(c, key, SLATE, O(w, 52), O(w / 2 + (i - 1) * (w + 8), y + 58), function()
+					local owned = passBtns[key]:GetAttribute("On")
+					give(owned and "takepass" or "pass", key:lower())
+				end, { icon = pinfo[2], iconSize = 36, text = 22 })
+			end
+			c.Size = O(W, y + 88)
+
+			renderGive = function()
+				local me = targetId()
+				local p
+				for _, r in roster do if r.userId == me then p = r end end
+				if not p and target then target = nil return renderGive() end -- they left: back to me
+				who.Text = p and p.displayName or player.DisplayName
+				who.TextColor3 = me == player.UserId and WHITE or C.cash
+				av.Image = "rbxthumb://type=AvatarHeadShot&id=" .. me .. "&w=150&h=150"
+				for key, b in passBtns do
+					local on = p and p.passes[key] == true
+					b:SetAttribute("On", on)
+					paint(b, on and P.green or SLATE)
+					setLabel(b, key .. (on and ": ON" or ": OFF"))
+				end
+			end
+			refresh.Give = refresh.Players -- refreshing the roster also redraws this tab
+		end
+
+		----- Events: a tile per weather and per boost event, a duration, Start and Stop -----
+		do
+			local page = pages.Events
+			title(page, "Events")
+			local list = {}
+			for _, w in Config.WEATHERS do table.insert(list, { name = w.name, text = w.name:upper(), icon = w.icon, color = w.color, weather = true }) end
+			for _, e in Config.BOOST_EVENTS do table.insert(list, { name = e.name, text = e.text, icon = e.icon, color = e.color, attr = e.attr }) end
+			local chosen = list[1]
+			local row = new("Frame", { BackgroundTransparency = 1, Position = O(0, 58), Size = O(CW, 190) }, page)
+			local gap = 18
+			local tw = math.min(220, (CW - gap * (#list - 1)) / #list)
+			local x0 = (CW - (#list * tw + (#list - 1) * gap)) / 2
+			local tiles = {}
+			for i, e in list do
+				local col = e.color
+				local pal = { col:Lerp(WHITE, 0.15), col:Lerp(BLACK, 0.5), col:Lerp(BLACK, 0.7) } -- bright top fading dark, like the reference tiles
+				local b
+				b = button(row, nil, pal, O(tw, 170), O(x0 + tw / 2 + (i - 1) * (tw + gap), 92), function()
+					chosen = e
+					for _, t in tiles do mark(t.b, t.e == e) end
+				end, { r = 14, lip = 7 })
+				rays(b.Face, 170, O(tw / 2, 62), WHITE)
+				sticker(b.Face, e.icon, 84, O(tw / 2, 62), true)
+				label(b.Face, e.text, 28, { Position = O(0, 106), Size = O(tw, 36) })
+				local time = label(b.Face, "", 20, { Position = O(0, 138), Size = O(tw, 24), TextColor3 = C.yellow })
+				local on = tag(b, "ON", O(tw - 14, 8), P.lime[3])
+				on.Visible = false
+				tiles[i] = { b = b, e = e, time = time, on = on }
+				mark(b, i == 1)
+			end
+			caption(page, "Event Duration (seconds)", O(0, 266), CW).TextXAlignment = Enum.TextXAlignment.Center
+			local dur = input(page, O(300, 64), O((CW - 300) / 2, 302), "150", "150", true)
+			dur.TextSize, dur.TextXAlignment = 38, Enum.TextXAlignment.Center
+			button(page, "START", P.green, O(230, 64), O(CW / 2 - 140, 420), function()
+				call("event", { name = chosen.name, seconds = tonumber(dur.Text) or 0 })
+			end, { text = 32, vivid = true })
+			button(page, "STOP", P.red, O(230, 64), O(CW / 2 + 140, 420), function()
+				call("event", { name = chosen.name, op = "stop" })
+			end, { text = 32 })
+			label(page, "Weather tiles boost their mutation. 2x events stack with players' own boosts.", 16,
+				{ Position = O(0, 470), Size = O(CW, 22), TextColor3 = hex("9AA6C8") })
+			task.spawn(function()
+				while true do
+					if current == "Admin" and active == "Events" then
+						local now = workspace:GetServerTimeNow()
+						for _, t in tiles do
+							local left
+							if t.e.weather then
+								left = Zoo:GetAttribute("Weather") == t.e.name and (Zoo:GetAttribute("WeatherEnds") or 0) - now or 0
+							else
+								left = (Zoo:GetAttribute(t.e.attr) or 0) - now
+							end
+							t.on.Visible = left > 0
+							t.time.Text = left > 0 and fmtTime(left) .. " left" or ""
+						end
+					end
+					task.wait(0.5)
+				end
+			end)
+		end
+
+		----- Announce -----
+		do
+			local page = pages.Announce
+			title(page, "Announcement")
+			local box = input(page, O(CW, 170), O(0, 58), "Type a message for the whole server...", "")
+			box.MultiLine, box.TextWrapped, box.TextTruncate = true, true, Enum.TextTruncate.None
+			box.TextXAlignment, box.TextYAlignment = LEFT, Enum.TextYAlignment.Top
+			box.UIPadding.PaddingTop, box.UIPadding.PaddingBottom = UDim.new(0, 10), UDim.new(0, 10)
+			local counter = label(page, "0/150", 18, { Position = O(CW - 120, 232), Size = O(120, 24), TextXAlignment = RIGHT, TextColor3 = hex("9AA6C8") })
+			box:GetPropertyChangedSignal("Text"):Connect(function()
+				if #box.Text > 150 then box.Text = box.Text:sub(1, 150) end
+				counter.Text = #box.Text .. "/150"
+			end)
+			caption(page, "Show it for", O(0, 262), 200)
+			local secs = 8
+			local chips = {}
+			for i, n in { 5, 8, 15, 30 } do
+				chips[i] = button(page, n .. "s", P.blue, O(84, 48), O(196 + (i - 1) * 94, 278), function()
+					secs = n
+					for j, b in chips do mark(b, j == i) end
+				end, { text = 22 })
+				mark(chips[i], n == secs)
+			end
+			button(page, "SEND TO EVERYONE", P.green, O(340, 66), O(CW / 2, 380), function()
+				if call("announce", { text = box.Text, seconds = secs }) then box.Text = "" end
+			end, { icon = "newspaper", iconSize = 42, text = 28, vivid = true })
+			label(page, "It pops up for every player with your name on it. Roblox's chat filter runs on it first.", 16,
+				{ Position = O(0, 430), Size = O(CW, 22), TextColor3 = hex("9AA6C8") })
+		end
+
+		----- Timer: a countdown strip every player sees -----
+		do
+			local page = pages.Timer
+			title(page, "Timer Countdown")
+			caption(page, "Title", O(0, 66), 200)
+			local name = input(page, O(CW - 140, 54), O(140, 58), "Event starts in", "Event starts in")
+			caption(page, "Seconds", O(0, 140), 200)
+			local secs = input(page, O(180, 54), O(140, 132), "60", "60", true)
+			for i, q in { { "30s", 30 }, { "1m", 60 }, { "5m", 300 }, { "10m", 600 } } do
+				button(page, q[1], P.blue, O(86, 50), O(380 + (i - 1) * 96, 159), function() secs.Text = tostring(q[2]) end, { text = 22 })
+			end
+			local status = label(page, "", 26, { Position = O(0, 220), Size = O(CW, 34), TextColor3 = C.yellow })
+			button(page, "START", P.green, O(230, 64), O(CW / 2 - 140, 320), function()
+				call("timer", { title = name.Text, seconds = tonumber(secs.Text) or 0 })
+			end, { text = 32, vivid = true })
+			button(page, "STOP", P.red, O(230, 64), O(CW / 2 + 140, 320), function() call("timer", { op = "stop" }) end, { text = 32 })
+			label(page, "Shows under the weather banner for everyone, then says NOW! when it hits zero.", 16,
+				{ Position = O(0, 370), Size = O(CW, 22), TextColor3 = hex("9AA6C8") })
+			task.spawn(function()
+				while true do
+					if current == "Admin" and active == "Timer" then
+						local left = (Zoo:GetAttribute("TimerEnds") or 0) - workspace:GetServerTimeNow()
+						status.Text = left > 0 and ("Running: " .. (Zoo:GetAttribute("TimerTitle") or "") .. "  " .. fmtTime(math.ceil(left))) or "No countdown running"
+					end
+					task.wait(0.25)
+				end
+			end)
+		end
+
+		----- Server options -----
+		do
+			local page = pages.Server
+			title(page, "Server Options")
+			local panel = sheetPanel(page, O(CW, 120), O(0, 58))
+			local stats = {}
+			for i, k in { "Players", "Uptime", "Version" } do
+				local x = (i - 1) * CW / 3
+				caption(panel, k:upper(), O(x, 14), CW / 3).TextXAlignment = Enum.TextXAlignment.Center
+				stats[k] = label(panel, "-", 40, { Position = O(x, 52), Size = O(CW / 3, 50) })
+			end
+			local weatherBtn
+			weatherBtn = button(page, "RANDOM WEATHER: ON", P.green, O(CW, 64), O(CW / 2, 230), function()
+				local on = not weatherBtn:GetAttribute("On")
+				local ok, data = call("server", { op = "weather", on = on })
+				if ok and data then refresh.ServerInfo(data) end
+			end, { icon = "cloud", iconSize = 40, text = 26, vivid = true })
+			button(page, "STOP ALL EVENTS", P.red, O((CW - 12) / 2, 64), O((CW - 12) / 4, 310), function() call("server", { op = "stopall" }) end,
+				{ icon = "cross", iconSize = 36, text = 24 })
+			button(page, "RESPAWN EVERYONE", P.blue, O((CW - 12) / 2, 64), O(CW - (CW - 12) / 4, 310), function() call("server", { op = "respawn" }) end,
+				{ icon = "house", iconSize = 36, text = 24 })
+			label(page, "Stop all ends the weather, 2x events and the countdown. Random weather off keeps the sky clear unless you start one.", 16,
+				{ Position = O(0, 356), Size = O(CW, 44), TextColor3 = hex("9AA6C8"), TextWrapped = true })
+			refresh.ServerInfo = function(info)
+				if not info then return end
+				stats.Players.Text = info.players .. "/" .. info.maxPlayers
+				stats.Uptime.Text = fmtTime(info.uptime)
+				stats.Version.Text = "v" .. info.version
+				weatherBtn:SetAttribute("On", not info.weatherPaused)
+				paint(weatherBtn, info.weatherPaused and SLATE or P.green)
+				setLabel(weatherBtn, "RANDOM WEATHER: " .. (info.weatherPaused and "OFF" or "ON"))
+			end
+			refresh.Server = refresh.Players
+		end
+
+		refreshers.Admin = function() show(active or "Players") end
+	end
+
+	-- the hammer button sits under the left menu, for admins only (above it, Roblox's chat window would eat its clicks)
+	local adminBtn = railButton(leftBar, 5, "ADMIN", P.red, function()
+		if not built then build() end
+		open("Admin")
+	end, { icon = "hammer", iconSize = 46, text = 26, name = "Admin" })
+	local function update()
+		local on = player:GetAttribute("Admin") == true
+		adminBtn.Visible = on
+		if not on and current == "Admin" then close("Admin") end
+	end
+	player:GetAttributeChangedSignal("Admin"):Connect(update)
+	update()
+end
 
 ----- plot signs: each plot's upgrade sign and draw easel show live info for whoever owns it -----
 do
@@ -1683,6 +2464,20 @@ do
 	end
 	board:GetAttributeChangedSignal("Top"):Connect(refresh)
 	refresh()
+
+	-- the board turns slowly (one turn per 36 s) so every plot round the plaza gets to read it; both faces show the list.
+	-- Spun here on each client so it is smooth and costs no network; server time keeps everyone's board at the same angle.
+	local art = World:WaitForChild("Art"):WaitForChild("Leaderboard")
+	local axis = CFrame.new(board.Position.X, 0, board.Position.Z)
+	local parts, homes = { board, header }, {}
+	for _, k in { "bulb", "screen", "red", "yellow", "gold", "wood" } do table.insert(parts, art:WaitForChild(k)) end -- the square stone base stays put
+	for i, p in parts do homes[i] = axis:ToObjectSpace(p.CFrame) end
+	local cfs = table.create(#parts)
+	RunService.Heartbeat:Connect(function()
+		local turn = axis * CFrame.Angles(0, workspace:GetServerTimeNow() * math.rad(10) % (2 * math.pi), 0)
+		for i, h in homes do cfs[i] = turn * h end
+		workspace:BulkMoveTo(parts, cfs, Enum.BulkMoveMode.FireCFrameChanged)
+	end)
 end
 
 ----- Animal race: pick an animal at the pad inside the gate, ride its cutout round the outskirts, the winner spins the prize wheel -----
@@ -1740,7 +2535,7 @@ do
 				selected = a.id
 				refreshers.Race()
 			end, { lip = 5 }, -a.r * 100 + i)
-			Render.draw(display(b.Face, O(120, 84), O(9, 8)), a.d, true, 3)
+			mutationFx(Render.draw(display(b.Face, O(120, 84), O(9, 8)), a.d, true, 3), a.m)
 			label(b.Face, a.d.n, 20, { Position = O(0, 96), Size = O(138, 24) })
 			label(b.Face, Config.RARITIES[a.r].name:upper(), 16, { Position = O(0, 120), Size = O(138, 20), TextColor3 = C.yellow })
 			if a.id == selected then
@@ -1751,7 +2546,7 @@ do
 		empty.Visible = #state.animals == 0
 		local a = selected and find(selected)
 		thumb:ClearAllChildren()
-		if a then Render.draw(display(thumb, O(220, 154), O(0, 0), 12), a.d, true, 3) end
+		if a then mutationFx(Render.draw(display(thumb, O(220, 154), O(0, 0), 12), a.d, true, 3), a.m) end
 		pName.Text = a and a.d.n or "-"
 		local inQueue, racing = mine(race.queue), mine(race.racers)
 		joinBtn.Visible = not inQueue and not racing and a ~= nil
@@ -1761,7 +2556,7 @@ do
 		if racing then
 			status.Text = "You're racing!"
 		elseif inQueue then
-			status.Text = race.phase == "racing" and "Queued for the next race" or string.format("In the queue: %d/%d\nNeeds %d to start", n, race.max, race.min)
+			status.Text = race.phase == "racing" and "Queued for the next race" or race.soloAt and "Nobody else yet:\nsolo run soon" or string.format("In the queue: %d/%d\nNeeds %d to start", n, race.max, race.min)
 		else
 			status.Text = n > 0 and string.format("%d waiting to race", n) or "Pick an animal and join!"
 		end
@@ -1786,7 +2581,7 @@ do
 	refreshers.RaceAsk = function()
 		local a = ensureSelected()
 		askThumb:ClearAllChildren()
-		if a then Render.draw(display(askThumb, O(200, 140), O(0, 0), 12), a.d, true, 3) end
+		if a then mutationFx(Render.draw(display(askThumb, O(200, 140), O(0, 0), 12), a.d, true, 3), a.m) end
 		askName.Text = a and a.d.n or "No animals yet!"
 		local n = #race.queue
 		askInfo.Text = not a and "Draw an animal at any easel to race on it." or race.phase == "racing" and "A race is on: you'll be in the next one."
@@ -1811,14 +2606,19 @@ do
 		end
 	end)
 
-	-- race HUD: place and lap pill at the top, big pop-up words in the middle (countdown, GO!, BOOST!, your place)
-	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(440, 66), BackgroundTransparency = 1, Visible = false }, gui))
-	local pill = round(new("Frame", { Size = S(1, 1), BackgroundColor3 = WHITE }, hudR), 18)
-	grad(pill, P.purple)
-	ink(pill, 4)
-	local placeL = label(pill, "", 36, { Position = O(18, 6), Size = O(200, 50), TextXAlignment = LEFT }, true)
-	goldText(placeL)
-	local lapL = label(pill, "", 30, { Position = O(220, 8), Size = O(200, 46), TextXAlignment = RIGHT }, true)
+	-- race HUD: three chips at the top in the side-rail style (place, time left, lap), a RESET button under them, warnings
+	-- under that, and big pop-up words in the middle (countdown, GO!, BOOST!, your place)
+	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(582, 56), BackgroundTransparency = 1, Visible = false }, gui))
+	local function chip(i, pal, icon)
+		local _, face = card(hudR, pal, O(186, 56), O((i - 1) * 198, 0))
+		sticker(face, icon, 40, O(30, 25))
+		return label(face, "", 26, { Position = O(54, 0), Size = O(124, 50), TextXAlignment = LEFT }, true)
+	end
+	local placeL, clockL, lapL = chip(1, P.gold, "crown"), chip(2, P.blue, "clock"), chip(3, P.purple, "rocket")
+	local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	local function resetCar() Remotes:WaitForChild("RaceReset"):FireServer() end
+	button(hudR, touch and "RESET" or "RESET (R)", P.orange, O(186, 52), O(291, 94), resetCar, { icon = "skip", iconSize = 34, text = 22 })
+	local hintL = label(hudR, "", 34, { Position = O(0, 128), Size = O(582, 44) }) -- WRONG WAY! and the stuck hint
 	local big = scaled(new("Frame", { Name = "RacePop", AnchorPoint = CENTER, Position = S(0.5, 0.36), Size = O(800, 190), BackgroundTransparency = 1, Visible = false, ZIndex = 30 }, gui))
 	local bigScale = new("UIScale", { Name = "Pop" }, big)
 	local bigL = label(big, "", 130, { Size = S(1, 1) }, true)
@@ -1831,43 +2631,61 @@ do
 		task.delay(hold or 0.8, function() if popId == id then big.Visible = false end end)
 	end
 	local camera = workspace.CurrentCamera
-	local function zoom(seconds) -- speed kick: widen the view, then ease back over the boost
-		TweenService:Create(camera, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { FieldOfView = 84 }):Play()
-		task.delay(0.15, function() TweenService:Create(camera, TweenInfo.new(seconds, Enum.EasingStyle.Sine), { FieldOfView = 70 }):Play() end)
-	end
+	local kick = 0 -- boost kick for the chase camera: widens the view for a moment, then eases back
+	local myDrive -- your own car while you race (set by drive below)
+	UserInputService.InputBegan:Connect(function(input, gp)
+		if not gp and myDrive and (input.KeyCode == Enum.KeyCode.R or input.KeyCode == Enum.KeyCode.ButtonY) then resetCar() end
+	end)
 
-	local shown
+	local shown, lastLap, lastSolo
 	Remotes.RaceState.OnClientEvent:Connect(function(s)
 		local before = race.phase
 		race = s
 		local racing = mine(s.racers)
 		hudR.Visible = racing and s.phase == "racing"
 		if racing and current == "Race" then close("Race") end
-		if racing and s.phase == "racing" and before == "countdown" then pop("GO!", C.cash) end
-		if not racing then shown = nil end
+		if racing and s.phase == "racing" and before == "countdown" and shown ~= 0 then pop("GO!", C.cash) end
+		if not racing then shown, lastLap = nil, nil end
+		if s.soloAt and s.soloAt ~= lastSolo and mine(s.queue) then
+			lastSolo = s.soloAt
+			toast(string.format("Nobody else yet - your solo run starts in %ds", math.max(1, math.ceil(s.soloAt - workspace:GetServerTimeNow()))), C.yellow)
+		end
 		if current == "Race" then refreshers.Race() end
 	end)
 	RunService.Heartbeat:Connect(function()
-		if race.phase ~= "countdown" or not mine(race.racers) then return end
+		if not mine(race.racers) then return end
 		local left = math.ceil(race.ends - workspace:GetServerTimeNow())
-		if left >= 1 and left ~= shown then
-			shown = left
-			pop(tostring(left), C.yellow, 0.9)
+		if race.phase == "racing" then
+			local s = math.max(0, left)
+			clockL.Text = string.format("%d:%02d", s // 60, s % 60)
+			clockL.TextColor3 = s <= 15 and hex("FF5A5A") or WHITE
+		elseif race.phase == "countdown" then
+			if left >= 1 and left ~= shown then
+				shown = left
+				pop(tostring(left), C.yellow, 0.9)
+			elseif left < 1 and shown ~= 0 then -- GO! right on time, not when the server's next broadcast lands
+				shown = 0
+				pop("GO!", C.cash)
+			end
 		end
 	end)
 	Remotes.RaceInfo.OnClientEvent:Connect(function(i)
 		if i.place then
 			placeL.Text = ordinal(i.place) .. " / " .. i.count
 			lapL.Text = "LAP " .. i.lap .. "/" .. i.laps
+			if lastLap and i.lap > lastLap then pop(i.lap == i.laps and "FINAL LAP!" or "LAP " .. i.lap, C.yellow, 1.2) end
+			lastLap = i.lap
 		end
 		if i.boost then
 			pop("BOOST!", hex("3DF5FF"), 0.6)
-			zoom(i.boost)
+			kick = 1
 		end
+		if i.respawn and myDrive then myDrive.snap(i.respawn) end
 		if i.mud then toast("Mud! Slowed down...", hex("D9A066")) end
 		if i.finished then
 			hudR.Visible = false
 			pop(ordinal(i.finished) .. " PLACE!", i.finished == 1 and C.yellow or WHITE, 2)
+			if i.time then toast(string.format("Your time: %d:%05.2f", i.time // 60, i.time % 60)) end
 		end
 	end)
 
@@ -1909,7 +2727,7 @@ do
 	end)
 
 	-- the cutouts racers ride (built by the server, drawn here), hopping while they run; boost rings turn slowly
-	local mounts, rings = {}, {}
+	local mounts, rings, lean = {}, {}, {}
 	local function addMount(part)
 		if mounts[part] then return end
 		local ok, design = pcall(HttpService.JSONDecode, HttpService, part:GetAttribute("Design") or "")
@@ -1919,28 +2737,60 @@ do
 			local sg = new("SurfaceGui", { Face = face, SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud, PixelsPerStud = 40, LightInfluence = 0.25, MaxDistance = 300, Adornee = part }, part)
 			Render.draw(sg, design, true, 2)
 		end
+		cutoutFx(part)
 		local weld = part:WaitForChild("MountWeld", 5)
 		if weld and mounts[part] then mounts[part].weld, mounts[part].base = weld, weld.C0 end
 	end
 
 	-- driving your own car: the VehicleSeat reads WASD, arrows, a gamepad or the thumbstick as throttle and steer.
-	-- It pulls away slowly and builds up to the server's "Top" speed, coasts down when you let go, and steers like a
-	-- car: the wheel follows the stick with a lag and you can't turn on the spot. Bumping into something costs speed.
+	-- It gets going quickly and builds up to the server's "Top" speed, coasts down when you let go, and steers like a
+	-- car: the wheel follows the stick with a short lag and you can't turn on the spot. Bumping into something costs speed.
+	-- The camera is Roblox's vehicle camera: drag to look around and zoom, and it swings back behind the car as you drive.
+	-- The view widens with speed and on a boost.
 	local function drive(car)
 		if car:GetAttribute("Owner") ~= player.UserId then return end
-		local body, seat = car:WaitForChild("Body", 5), car:WaitForChild("Seat", 5)
+		local body, seat, cut = car:WaitForChild("Body", 5), car:WaitForChild("Seat", 5), car:WaitForChild("RaceMount", 5)
 		local lv, ao = body and body:WaitForChild("LinearVelocity", 5), body and body:WaitForChild("AlignOrientation", 5)
 		if not (lv and ao and seat) then return end
 		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end
 		local look = body.CFrame.LookVector
 		local yaw = math.atan2(-look.X, -look.Z)
-		local speed, steer = 0, 0
+		local speed, steer, stuckT, wrongT = 0, 0, 0, 0
+		local me = {}
+		function me.snap(cf) -- the server put us back on the track: face along it, standing still
+			car:PivotTo(cf)
+			body.AssemblyLinearVelocity = Vector3.zero
+			local l = cf.LookVector
+			yaw, speed, steer, stuckT, wrongT = math.atan2(-l.X, -l.Z), 0, 0, 0, 0
+			ao.CFrame, lv.PlaneVelocity = CFrame.Angles(0, yaw, 0), Vector2.zero
+		end
+		myDrive = me
 		local conn
+		RunService:UnbindFromRenderStep("RaceCam")
+		RunService:BindToRenderStep("RaceCam", Enum.RenderPriority.Camera.Value + 1, function(dt)
+			if not car.Parent then return end
+			kick = math.max(0, kick - dt / 1.5)
+			local fov = 70 + 12 * math.clamp(speed / R.BOOST_SPEED, 0, 1) + 10 * kick
+			camera.FieldOfView += (fov - camera.FieldOfView) * (1 - math.exp(-dt * 6))
+		end)
 		conn = RunService.Heartbeat:Connect(function(dt)
 			if not car.Parent then
 				conn:Disconnect()
+				RunService:UnbindFromRenderStep("RaceCam")
+				if myDrive == me then myDrive = nil end
+				lean[cut or 0], hintL.Text = nil, ""
 				if hum and hum.Parent then hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true) end
+				local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+				if h then camera.CameraSubject = h end
+				if h and h.Health > 0 then -- race over: back beside the pad, ready for the next one
+					task.delay(0.1, function()
+						h.Sit = false
+						local spot = RL.RETURN + Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
+						player.Character:PivotTo(CFrame.lookAt(spot, Vector3.new(RL.PAD.x, spot.Y, RL.PAD.z)))
+					end)
+				end
+				camera.CameraType, camera.FieldOfView = Enum.CameraType.Custom, 70
 				return
 			end
 			if body.Anchored then return end -- still on the grid
@@ -1952,9 +2802,11 @@ do
 			steer += (input - steer) * math.min(1, dt / R.STEER_LAG)
 			if speed > top then
 				speed = math.max(top, speed - R.BRAKE * dt) -- mud, or a boost running out
+			elseif throttle > 0 and speed < 0 then
+				speed = math.min(0, speed + R.BRAKE * dt) -- rolling backwards: W brakes first
 			elseif throttle > 0 then
 				local a = top > R.TOP_SPEED and R.BOOST_ACCEL or R.ACCEL
-				speed = math.min(top, speed + a * dt * (1 - 0.6 * math.max(speed, 0) / top)) -- strong pull at first, easing off near the top
+				speed = math.min(top, speed + a * dt * (1 - 0.6 * speed / math.max(top, 1))) -- strong pull at first, easing off near the top
 			elseif throttle < 0 then
 				speed = math.max(-R.REVERSE_SPEED, speed - R.BRAKE * dt)
 			else
@@ -1964,11 +2816,25 @@ do
 			local actual = body.AssemblyLinearVelocity:Dot(fwd)
 			if speed > 6 and actual < speed - 8 then speed = math.max(actual + 3, 0) end -- hit something: lose the speed
 			-- no turning on the spot: full turn rate once rolling, and only a little when crawling (enough to nose out of a crash)
-			local grip = math.clamp(math.abs(speed) / 14, throttle ~= 0 and 0.3 or 0, 1)
-			yaw -= steer * math.rad(R.TURN) * grip * dt * (speed >= 0 and 1 or -1)
+			local grip = math.clamp(math.abs(speed) / 14, throttle < 0 and 0.8 or throttle > 0 and 0.3 or 0, 1) -- reverse steers well at once, to back out of a crash
+			-- a little less lock at boost speed, so a boost doesn't throw you into the wall
+			local turn = R.TURN * (1 - 0.25 * math.clamp((speed - R.TOP_SPEED) / (R.BOOST_SPEED - R.TOP_SPEED), 0, 1))
+			yaw -= steer * math.rad(turn) * grip * dt * (speed >= 0 and 1 or -1)
 			local rot = CFrame.Angles(0, yaw, 0)
 			ao.CFrame = rot
 			lv.PlaneVelocity = Vector2.new(rot.LookVector.X, rot.LookVector.Z) * speed
+			-- the cutout leans into the turn; warnings for driving the wrong way round or being pinned against something
+			lean[cut or 0] = steer * 0.14 * math.clamp(speed / R.TOP_SPEED, 0, 1)
+			local facing = math.cos(yaw - math.rad(RL.angle(body.Position))) -- 1 = along the race, -1 = backwards
+			wrongT = (facing < -0.2 and speed > 5) and wrongT + dt or 0
+			stuckT = (throttle ~= 0 and math.abs(actual) < 2) and stuckT + dt or 0
+			if wrongT > 1 then
+				hintL.Text, hintL.TextColor3 = "WRONG WAY!", hex("FF5A5A")
+			elseif stuckT > 2.5 then
+				hintL.Text, hintL.TextColor3 = touch and "Stuck? Tap RESET" or "Stuck? Press R to reset", C.yellow
+			else
+				hintL.Text = ""
+			end
 		end)
 	end
 	local function addRing(m)
@@ -1994,7 +2860,7 @@ do
 			if hrp then
 				local moving = hrp.AssemblyLinearVelocity.Magnitude > 3
 				local s = math.sin(t * 9 + m.seed)
-				m.weld.C0 = m.base * CFrame.new(0, moving and math.abs(s) * 0.35 or 0, 0) * CFrame.Angles(0, 0, moving and s * 0.04 or 0)
+				m.weld.C0 = m.base * CFrame.new(0, moving and math.abs(s) * 0.35 or 0, 0) * CFrame.Angles(lean[part] or 0, 0, moving and s * 0.04 or 0)
 			end
 		end
 		local turn = CFrame.Angles(0, 0, t * 0.8)

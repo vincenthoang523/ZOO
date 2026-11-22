@@ -27,13 +27,59 @@ Config.RARITIES = {
 	{ name = "Mythic", oneIn = 1024, rate = 10000, color = rgb(255, 90, 120) },
 }
 
--- Every drawing also rolls a mutation, separately from rarity. chances add up to 1; mult multiplies the animal's income.
+-- Every drawing also rolls a mutation, separately from rarity. mult multiplies the animal's income. Normal gets whatever
+-- chance the others leave (Config.mutationChances). A chance of 0 means only its weather can roll it. Append new ones at the end:
+-- saves store the index.
 Config.MUTATIONS = {
-	{ name = "Normal", chance = 0.9, mult = 1, color = rgb(235, 240, 248) },
+	{ name = "Normal", mult = 1, color = rgb(235, 240, 248) },
 	{ name = "Gold", chance = 0.06, mult = 3, color = rgb(255, 214, 40) },
 	{ name = "Diamond", chance = 0.03, mult = 6, color = rgb(110, 230, 255) },
 	{ name = "Rainbow", chance = 0.01, mult = 15, color = rgb(255, 90, 220) },
+	{ name = "Matrix", chance = 0, mult = 8, color = rgb(60, 255, 110) }, -- Matrix weather only
 }
+
+-- Weather: random server-wide events (ZooWeather.server.luau), one at a time with calm gaps between. While one is on,
+-- its mutation rolls at `chance` instead of its normal chance. Seconds are picked at random inside each range.
+-- look = Lighting properties every client tweens to: the key is "Lighting" or the name of a Lighting child.
+-- rain = characters that fall in columns over the screen (leave it out for no rain). icon = a Config.ICONS key.
+Config.WEATHER_GAP = { 360, 720 }
+Config.WEATHERS = {
+	{ name = "Matrix", mutation = "Matrix", chance = 0.1, weight = 1, duration = { 120, 180 }, icon = "cloud", color = rgb(60, 255, 110),
+		rain = "0123456789ABCDEFXZ$#%&*+=<>",
+		look = {
+			Lighting = { ClockTime = 21, Brightness = 1.5, Ambient = rgb(40, 100, 60), OutdoorAmbient = rgb(60, 150, 90) },
+			Atmosphere = { Density = 0.36, Color = rgb(30, 140, 70), Decay = rgb(0, 40, 15), Haze = 1.2, Glare = 0 },
+			CartoonGrade = { TintColor = rgb(170, 255, 190), Saturation = 0.1, Contrast = 0.2 },
+		},
+	},
+}
+
+-- Admin Panel events that double something for the whole server (ZooAdmin starts them, ZooServer's luck()/rate() apply them).
+-- attr = the ReplicatedStorage.Zoo attribute holding the server time it ends. Keep Luck first and Money second (ZooServer).
+Config.BOOST_EVENTS = {
+	{ name = "Luck", text = "2x LUCK", attr = "ServerLuckEnds", icon = "clover", color = rgb(255, 214, 40) },
+	{ name = "Money", text = "2x MONEY", attr = "ServerMoneyEnds", icon = "cashbundle", color = rgb(0, 190, 255) },
+}
+
+function Config.weather(name: string?): any
+	for _, w in Config.WEATHERS do
+		if w.name == name then return w end
+	end
+	return nil
+end
+
+-- Chance of each mutation while `weather` is on (nil = clear skies). Used by the server roll, so the odds live in one place.
+function Config.mutationChances(weather: string?): { number }
+	local w = Config.weather(weather)
+	local out, rest = table.create(#Config.MUTATIONS, 0), 1
+	for i = 2, #Config.MUTATIONS do
+		local m = Config.MUTATIONS[i]
+		out[i] = if w and w.mutation == m.name then w.chance else m.chance
+		rest -= out[i]
+	end
+	out[1] = rest
+	return out
+end
 
 -- The Judge's Review: stars (1-5) from how good the drawing is, each with an income multiplier and a verdict
 Config.JUDGE = { "SIZE", "COLOURS", "DETAIL", "EYES", "NEAT" }
@@ -58,7 +104,7 @@ Config.CAP_START = 2
 Config.CAP_MAX = 12
 Config.MAX_INVENTORY = 50
 -- UserIds allowed to use admin chat commands such as /reset (the owner of the group that owns the game is always allowed)
-Config.ADMINS = { 213438244 }
+Config.ADMINS = { 213438244, 135018525 } -- 135018525 = exodtust (rank 254 in the group, so not the owner)
 Config.CREATE_COOLDOWN = 5
 Config.DAILY_COOLDOWN = 20 * 3600
 Config.DAILY_RESET = 48 * 3600
@@ -87,6 +133,8 @@ Config.ICONS = {
 	-- Free Icon Pack v3.1 (uploaded 2026-11-16): sticker art and the intro skip button
 	fire = "rbxassetid://86782236536816", diamond = "rbxassetid://103499339444458", balloon = "rbxassetid://111496235104052",
 	strawberry = "rbxassetid://84280958364881", cloud = "rbxassetid://70823404569278", rocket = "rbxassetid://130155476113713", skip = "rbxassetid://102098865538470",
+	-- FOLK pack (uploaded 2026-11-22) for the Admin Panel
+	hammer = "rbxassetid://78796943006277", gear = "rbxassetid://81635946004815", newspaper = "rbxassetid://77189352700393",
 }
 Config.LUCK_BOOST_MINUTES = 5
 
@@ -96,9 +144,10 @@ Config.LUCK_BOOST_MINUTES = 5
 -- CONSOLATION_SECONDS of income. Speeds are studs/second, ACCEL/BRAKE/COAST studs/second each second, TURN degrees/second.
 Config.RACE = {
 	LAPS = 2, MIN_PLAYERS = 2, MAX_PLAYERS = 8, COUNTDOWN = 5,
-	TOP_SPEED = 40, BOOST_SPEED = 62, BOOST_SECONDS = 2.5, MUD_SPEED = 16, REVERSE_SPEED = 10,
-	ACCEL = 13, BOOST_ACCEL = 45, BRAKE = 30, COAST = 9,
-	TURN = 75, STEER_LAG = 0.3, -- full lock turns 75 deg/s once moving; the wheel takes about STEER_LAG seconds to follow the stick
+	TOP_SPEED = 40, BOOST_SPEED = 62, BOOST_SECONDS = 2.5, MUD_SPEED = 16, REVERSE_SPEED = 18,
+	ACCEL = 24, BOOST_ACCEL = 45, BRAKE = 40, COAST = 9, -- ACCEL: about 2.5 s from standing to TOP_SPEED
+	TURN = 75, STEER_LAG = 0.12, -- full lock turns 75 deg/s once moving; the wheel takes about STEER_LAG seconds to follow the stick
+	SOLO_WAIT = 30, RESET_COOLDOWN = 3, -- seconds: alone in the queue this long starts a solo run (no wheel); time between resets
 	TIME_LIMIT = 150, AFTER_WINNER = 25, -- seconds: the whole race, and how long the rest get once someone has won
 	CONSOLATION_SECONDS = 120,
 	-- prize wheel slices, clockwise from the top. cash = seconds of the winner's income; luck/money = minutes of 2x
