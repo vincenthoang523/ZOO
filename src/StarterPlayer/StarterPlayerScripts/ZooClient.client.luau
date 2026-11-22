@@ -1946,7 +1946,12 @@ do
 	local function build()
 		built = true
 		local remote = Remotes:WaitForChild("Admin")
+		local nextSlot = 0 -- the server takes one call per 0.15s, so calls fired together (a lookup and the ban list) queue up here
 		local function call(action, payload)
+			local now = os.clock()
+			local slot = math.max(now, nextSlot)
+			nextSlot = slot + 0.17
+			if slot > now then task.wait(slot - now) end
 			local ok, good, msg, data = pcall(remote.InvokeServer, remote, action, payload or {})
 			if not ok then
 				toast("Admin request failed", C.red)
@@ -1983,6 +1988,24 @@ do
 			b.Outline.Color = on and WHITE or BLACK
 			b.Outline.Thickness = on and 5 or 4
 		end
+		local function confirm(parent, str, pal, size, pos, callback, opt) -- a button that asks SURE? first: the second press within 3 seconds runs it
+			local armed, b = false, nil
+			b = button(parent, str, pal, size, pos, function()
+				if not armed then
+					armed = true
+					setLabel(b, "SURE?")
+					task.delay(3, function()
+						armed = false
+						if b.Parent then setLabel(b, str) end
+					end)
+					return
+				end
+				armed = false
+				setLabel(b, str)
+				callback()
+			end, opt)
+			return b
+		end
 		local function scroller(parent, pos, size)
 			local s = new("ScrollingFrame", { Position = pos, Size = size, BackgroundTransparency = 1, ScrollBarThickness = 8, ScrollBarImageColor3 = hex("9A9A9A"),
 				TopImage = "", BottomImage = "", CanvasSize = U(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y }, parent)
@@ -2000,19 +2023,20 @@ do
 			end
 			if refresh[name] then task.spawn(refresh[name]) end
 		end
-		local TAB_LIST = { { "Players", "group" }, { "Give", "gift" }, { "Events", "cloud" }, { "Announce", "newspaper" }, { "Timer", "clock" }, { "Server", "gear" } }
+		local TAB_LIST = { { "Players", "group" }, { "Give", "gift" }, { "Events", "cloud" }, { "Announce", "newspaper" }, { "Timer", "clock" }, { "Server", "gear" }, { "Moderate", "lock" } }
 		for i, t in TAB_LIST do
-			tabs[t[1]] = button(body, t[1], SLATE, O(196, 60), O(100, 34 + (i - 1) * 72), function() show(t[1]) end,
+			tabs[t[1]] = button(body, t[1], SLATE, O(196, 60), O(100, 34 + (i - 1) * 66), function() show(t[1]) end,
 				{ icon = t[2], iconSize = 38, text = 26, name = t[1] .. "Tab" })
 			pages[t[1]] = new("Frame", { Name = t[1], Position = O(216, 0), Size = O(CW, CH), BackgroundTransparency = 1, Visible = false }, body)
 		end
-		label(body, "Only admins see this", 18, { Position = O(0, 34 + 6 * 72 - 20), Size = O(200, 24), TextColor3 = hex("9AA6C8") })
+		label(body, "Only admins see this", 18, { Position = O(0, 34 + #TAB_LIST * 66 - 14), Size = O(200, 24), TextColor3 = hex("9AA6C8") })
 		new("Frame", { Name = "Divider", BackgroundColor3 = BLACK, BackgroundTransparency = 0.5, Position = O(205, 0), Size = O(3, CH) }, body)
 
 		----- Players -----
 		local roster = {} -- last list from the server
 		local target -- userId the Give tab acts on (nil = me)
 		local renderGive -- set by the Give tab
+		local moderate -- set by the Moderate tab: moderate(userId) opens it on that player
 		do
 			local page = pages.Players
 			local count = label(page, "", 30, { Position = O(0, 0), Size = O(500, 44), TextXAlignment = LEFT })
@@ -2030,42 +2054,32 @@ do
 				local av = round(new("ImageLabel", { Size = O(62, 62), Position = O(9, 9), BackgroundColor3 = hex("3A4A72"),
 					Image = "rbxthumb://type=AvatarHeadShot&id=" .. p.userId .. "&w=150&h=150" }, f), 31)
 				ink(av, 3)
-				local name = label(f, p.displayName, 26, { Position = O(82, 6), Size = O(250, 34), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+				local name = label(f, p.displayName, 26, { Position = O(82, 6), Size = O(220, 34), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
 				if p.admin then name.TextColor3 = hex("FF8A80") end
-				label(f, "@" .. p.name, 16, { Position = O(83, 38), Size = O(250, 20), TextXAlignment = LEFT, TextColor3 = hex("B8C2E0"), TextTruncate = Enum.TextTruncate.AtEnd })
+				label(f, "@" .. p.name, 16, { Position = O(83, 38), Size = O(220, 20), TextXAlignment = LEFT, TextColor3 = hex("B8C2E0"), TextTruncate = Enum.TextTruncate.AtEnd })
 				label(f, "$" .. Config.format(p.cash) .. "  ·  <font color=\"#6BFF3A\">+$" .. Config.format(p.rate) .. "/s</font>  ·  " .. p.animals .. " animals", 16,
-					{ Position = O(83, 56), Size = O(260, 20), TextXAlignment = LEFT, TextColor3 = C.yellow })
-				local x = 352
-				local function act(str, pal, w, cb)
-					local b = button(f, str, pal, O(w, 50), O(x + w / 2, 38), cb, { text = 20 })
+					{ Position = O(83, 56), Size = O(225, 20), TextXAlignment = LEFT, TextColor3 = C.yellow, TextTruncate = Enum.TextTruncate.AtEnd })
+				local x = 312
+				local function act(str, pal, w, cb, sure)
+					local b = (sure and confirm or button)(f, str, pal, O(w, 50), O(x + w / 2, 38), cb, { text = 18 })
 					x += w + 8
 					return b
 				end
-				act("GIVE", P.cyan, 84, function()
+				act("GIVE", P.cyan, 74, function()
 					target = p.userId
 					show("Give")
 				end)
-				act("GO TO", P.blue, 86, function() call("player", { target = p.userId, op = "goto" }) end)
-				act("BRING", P.purple, 88, function() call("player", { target = p.userId, op = "bring" }) end)
-				local armed = false
-				local kick
-				kick = act("KICK", P.red, 78, function()
-					if not armed then -- first press arms it, the second within 3 seconds kicks
-						armed = true
-						setLabel(kick, "SURE?")
-						task.delay(3, function()
-							armed = false
-							if kick.Parent then setLabel(kick, "KICK") end
-						end)
-						return
-					end
-					if call("player", { target = p.userId, op = "kick" }) then task.delay(0.5, refresh.Players) end
-				end)
-				if p.admin then -- admins can't be kicked: a flat badge sits where KICK would be
-					kick.Visible = false
-					local badge = round(new("Frame", { AnchorPoint = CENTER, Position = O(x - 47, 38), Size = O(78, 40), BackgroundColor3 = P.red[2] }, f), 10)
+				act("GO TO", P.blue, 80, function() call("player", { target = p.userId, op = "goto" }) end)
+				act("BRING", P.purple, 82, function() call("player", { target = p.userId, op = "bring" }) end)
+				if p.admin then -- admins can't be kicked, wiped or banned: a flat badge sits where KICK and MOD would be
+					local badge = round(new("Frame", { AnchorPoint = CENTER, Position = O(x + 71, 38), Size = O(142, 40), BackgroundColor3 = P.red[2] }, f), 10)
 					ink(badge, 3)
 					label(badge, "ADMIN", 18, { Size = S(1, 1) })
+				else
+					act("KICK", P.red, 72, function()
+						if call("player", { target = p.userId, op = "kick" }) then task.delay(0.5, refresh.Players) end
+					end, true)
+					act("MOD", P.orange, 62, function() moderate(p.userId) end)
 				end
 			end
 			refresh.Players = function()
@@ -2347,6 +2361,123 @@ do
 				setLabel(weatherBtn, "RANDOM WEATHER: " .. (info.weatherPaused and "OFF" or "ON"))
 			end
 			refresh.Server = refresh.Players
+		end
+
+		----- Moderate: wipe a save, ban / unban, for anyone by username or UserId (online or not) -----
+		do
+			local page = pages.Moderate
+			local s = scroller(page, O(0, 0), O(CW, CH))
+			local W = CW - 16
+			local c = new("Frame", { BackgroundTransparency = 1, Size = O(W, 600) }, s)
+			caption(c, "PLAYER", O(0, 16), 100)
+			local box = input(c, O(W - 270, 54), O(100, 4), "Username or UserId", "")
+			local picked -- the server's lookup of the player in the box
+			local bar = sheetPanel(c, O(W, 84), O(0, 72))
+			local av = round(new("ImageLabel", { Size = O(62, 62), Position = O(11, 11), BackgroundColor3 = hex("3A4A72") }, bar), 31)
+			ink(av, 3)
+			local who = label(bar, "", 30, { Position = O(86, 6), Size = O(W - 100, 38), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+			local status = label(bar, "Type their username or UserId, then FIND", 18, { Position = O(87, 46), Size = O(W - 100, 26), TextXAlignment = LEFT,
+				TextColor3 = C.yellow, TextTruncate = Enum.TextTruncate.AtEnd })
+
+			caption(c, "REASON", O(0, 184), 100)
+			local reason = input(c, O(W - 100, 54), O(100, 172), "Optional - the banned player sees it", "")
+			reason:GetPropertyChangedSignal("Text"):Connect(function()
+				if #reason.Text > 100 then reason.Text = reason.Text:sub(1, 100) end
+			end)
+			caption(c, "BAN FOR", O(0, 254), 100)
+			local days = 0
+			local chips = {}
+			for i, d in { { "1 DAY", 1 }, { "7 DAYS", 7 }, { "FOREVER", 0 } } do
+				chips[i] = button(c, d[1], P.blue, O(140, 48), O(170 + (i - 1) * 150, 266), function()
+					days = d[2]
+					for j, b in chips do mark(b, j == i) end
+				end, { text = 22 })
+				mark(chips[i], d[2] == days)
+			end
+
+			local lookup, loadBans
+			local function act(action, extra)
+				if not picked then return toast("Find a player first", C.red) end
+				local payload = extra or {}
+				payload.user = tostring(picked.userId)
+				if call(action, payload) then
+					task.spawn(lookup)
+					task.spawn(loadBans)
+					task.delay(0.5, refresh.Players)
+				end
+			end
+			local bw = (W - 24) / 3
+			confirm(c, "WIPE SAVE", P.orange, O(bw, 62), O(bw / 2, 352), function() act("wipe") end, { icon = "trash", iconSize = 36, text = 24 })
+			local banBtn = confirm(c, "BAN", P.red, O(bw, 62), O(W / 2, 352), function()
+				act("ban", { reason = reason.Text, days = days })
+			end, { icon = "lock", iconSize = 36, text = 24 })
+			local unbanBtn = button(c, "UNBAN", P.green, O(bw, 62), O(W / 2, 352), function() act("unban") end, { icon = "check", iconSize = 36, text = 24, vivid = true })
+			unbanBtn.Visible = false
+			button(c, "KICK", P.purple, O(bw, 62), O(W - bw / 2, 352), function()
+				if not picked then return toast("Find a player first", C.red) end
+				if not picked.here then return toast(picked.name .. " isn't in this server", C.red) end
+				act("player", { target = picked.userId, op = "kick" })
+			end, { icon = "cross", iconSize = 34, text = 24 })
+			label(c, "Wipe deletes their whole save (cash, animals, upgrades); bought game passes stay. Works for offline players too.", 16,
+				{ Position = O(0, 392), Size = O(W, 22), TextColor3 = hex("9AA6C8") })
+
+			local function show1(d) -- fill the bar with a lookup result
+				picked = d
+				who.Text = d.name
+				av.Image = "rbxthumb://type=AvatarHeadShot&id=" .. d.userId .. "&w=150&h=150"
+				local b = d.ban
+				banBtn.Visible, unbanBtn.Visible = not b, b ~= nil
+				if d.me or d.admin then
+					status.Text, status.TextColor3 = d.me and "That's you" or "Admin - can't be wiped or banned", hex("FF8A80")
+				elseif b then
+					status.Text = "BANNED " .. (b.ends == 0 and "forever" or "until " .. os.date("%b %d %H:%M", b.ends)) .. " by " .. b.by .. (b.r ~= "" and (": " .. b.r) or "")
+					status.TextColor3 = C.red
+				else
+					status.Text, status.TextColor3 = (d.here and "In this server" or "Not in this server") .. "  ·  UserId " .. d.userId, C.yellow
+				end
+			end
+			lookup = function()
+				local q = (picked and box.Text == "") and tostring(picked.userId) or box.Text
+				local ok, d = call("lookup", { user = q })
+				if ok and d then show1(d) end
+			end
+			button(c, "FIND", P.blue, O(150, 54), O(W - 75, 30), function() task.spawn(lookup) end, { text = 24 })
+			box.FocusLost:Connect(function(enter) if enter then task.spawn(lookup) end end)
+
+			-- everyone banned right now, newest first, each with its own UNBAN
+			caption(c, "BANNED PLAYERS", O(0, 432), 300)
+			local list = new("Frame", { BackgroundTransparency = 1, Position = O(0, 470), Size = O(W, 0), AutomaticSize = Enum.AutomaticSize.Y }, c)
+			new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+			loadBans = function()
+				local ok, rows = call("bans")
+				if not ok or not rows then return end
+				list:ClearAllChildren()
+				new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+				if #rows == 0 then label(list, "Nobody is banned", 20, { Size = O(W, 30), TextColor3 = hex("9AA6C8") }) end
+				for i, b in rows do
+					local f = round(new("Frame", { Size = O(W, 70), BackgroundColor3 = i % 2 == 1 and hex("2B3B70") or hex("24325F"), LayoutOrder = i }, list), 14)
+					ink(f, 3)
+					local a = round(new("ImageLabel", { Size = O(52, 52), Position = O(9, 9), BackgroundColor3 = hex("3A4A72"),
+						Image = "rbxthumb://type=AvatarHeadShot&id=" .. b.userId .. "&w=150&h=150" }, f), 26)
+					ink(a, 3)
+					label(f, b.name, 24, { Position = O(72, 8), Size = O(W - 230, 30), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+					label(f, (b.ends == 0 and "Forever" or "Until " .. os.date("%b %d %H:%M", b.ends)) .. "  ·  by " .. b.by .. (b.reason ~= "" and ("  ·  " .. b.reason) or ""), 16,
+						{ Position = O(73, 40), Size = O(W - 230, 22), TextXAlignment = LEFT, TextColor3 = C.yellow, TextTruncate = Enum.TextTruncate.AtEnd })
+					button(f, "UNBAN", P.green, O(130, 50), O(W - 75, 35), function()
+						if call("unban", { user = tostring(b.userId) }) then
+							task.spawn(loadBans)
+							if picked and picked.userId == b.userId then task.spawn(lookup) end
+						end
+					end, { text = 20, vivid = true })
+				end
+				c.Size = O(W, 480 + #rows * 78 + 40)
+			end
+			refresh.Moderate = loadBans
+			moderate = function(userId)
+				box.Text = tostring(userId)
+				show("Moderate")
+				task.spawn(lookup)
+			end
 		end
 
 		refreshers.Admin = function() show(active or "Players") end
