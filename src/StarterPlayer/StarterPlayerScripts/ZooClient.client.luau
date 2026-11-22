@@ -2539,19 +2539,19 @@ do
 		end
 	end)
 
-	-- race HUD: place and lap pill at the top, big pop-up words in the middle (countdown, GO!, BOOST!, your place)
-	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(560, 66), BackgroundTransparency = 1, Visible = false }, gui))
-	local pill = round(new("Frame", { Size = S(1, 1), BackgroundColor3 = WHITE }, hudR), 18)
-	grad(pill, P.purple)
-	ink(pill, 4)
-	local placeL = label(pill, "", 36, { Position = O(18, 6), Size = O(170, 50), TextXAlignment = LEFT }, true)
-	goldText(placeL)
-	local clockL = label(pill, "", 30, { Position = O(190, 8), Size = O(180, 46) }, true) -- time left in the race
-	local lapL = label(pill, "", 30, { Position = O(370, 8), Size = O(172, 46), TextXAlignment = RIGHT }, true)
+	-- race HUD: three chips at the top in the side-rail style (place, time left, lap), a RESET button under them, warnings
+	-- under that, and big pop-up words in the middle (countdown, GO!, BOOST!, your place)
+	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(582, 56), BackgroundTransparency = 1, Visible = false }, gui))
+	local function chip(i, pal, icon)
+		local _, face = card(hudR, pal, O(186, 56), O((i - 1) * 198, 0))
+		sticker(face, icon, 40, O(30, 25))
+		return label(face, "", 26, { Position = O(54, 0), Size = O(124, 50), TextXAlignment = LEFT }, true)
+	end
+	local placeL, clockL, lapL = chip(1, P.gold, "crown"), chip(2, P.blue, "clock"), chip(3, P.purple, "rocket")
 	local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 	local function resetCar() Remotes:WaitForChild("RaceReset"):FireServer() end
-	button(hudR, touch and "RESET" or "RESET (R)", P.orange, O(190, 48), O(280, 102), resetCar, { text = 22 })
-	local hintL = label(hudR, "", 34, { Position = O(0, 136), Size = O(560, 44) }) -- WRONG WAY! and the stuck hint
+	button(hudR, touch and "RESET" or "RESET (R)", P.orange, O(186, 52), O(291, 94), resetCar, { icon = "skip", iconSize = 34, text = 22 })
+	local hintL = label(hudR, "", 34, { Position = O(0, 128), Size = O(582, 44) }) -- WRONG WAY! and the stuck hint
 	local big = scaled(new("Frame", { Name = "RacePop", AnchorPoint = CENTER, Position = S(0.5, 0.36), Size = O(800, 190), BackgroundTransparency = 1, Visible = false, ZIndex = 30 }, gui))
 	local bigScale = new("UIScale", { Name = "Pop" }, big)
 	local bigL = label(big, "", 130, { Size = S(1, 1) }, true)
@@ -2677,7 +2677,7 @@ do
 	-- driving your own car: the VehicleSeat reads WASD, arrows, a gamepad or the thumbstick as throttle and steer.
 	-- It gets going quickly and builds up to the server's "Top" speed, coasts down when you let go, and steers like a
 	-- car: the wheel follows the stick with a short lag and you can't turn on the spot. Bumping into something costs speed.
-	-- A chase camera sits behind the car and swings round with it; the view widens with speed and on a boost.
+	-- The camera stays the normal free camera (drag, rotate, zoom); the view widens with speed and on a boost.
 	local function drive(car)
 		if car:GetAttribute("Owner") ~= player.UserId then return end
 		local body, seat, cut = car:WaitForChild("Body", 5), car:WaitForChild("Seat", 5), car:WaitForChild("RaceMount", 5)
@@ -2688,14 +2688,12 @@ do
 		local look = body.CFrame.LookVector
 		local yaw = math.atan2(-look.X, -look.Z)
 		local speed, steer, stuckT, wrongT = 0, 0, 0, 0
-		local camYaw, camPos = yaw, nil
 		local me = {}
 		function me.snap(cf) -- the server put us back on the track: face along it, standing still
 			car:PivotTo(cf)
 			body.AssemblyLinearVelocity = Vector3.zero
 			local l = cf.LookVector
 			yaw, speed, steer, stuckT, wrongT = math.atan2(-l.X, -l.Z), 0, 0, 0, 0
-			camYaw, camPos = yaw, nil
 			ao.CFrame, lv.PlaneVelocity = CFrame.Angles(0, yaw, 0), Vector2.zero
 		end
 		myDrive = me
@@ -2703,13 +2701,9 @@ do
 		RunService:UnbindFromRenderStep("RaceCam")
 		RunService:BindToRenderStep("RaceCam", Enum.RenderPriority.Camera.Value + 1, function(dt)
 			if not car.Parent then return end
-			camera.CameraType = Enum.CameraType.Scriptable
-			local p = body.Position
-			camYaw += ((yaw - camYaw + math.pi) % (2 * math.pi) - math.pi) * (1 - math.exp(-dt * 5))
-			local f = CFrame.Angles(0, camYaw, 0).LookVector
-			local want = p - f * (11 + math.max(speed, 0) * 0.06) + Vector3.new(0, 6, 0)
-			camPos = camPos and camPos:Lerp(want, 1 - math.exp(-dt * 12)) or want
-			camera.CFrame = CFrame.lookAt(camPos, p + f * 12 + Vector3.new(0, 2.5, 0))
+			-- follow the car's body, not the seat: sitting makes the seat the subject, and the seat hops with the cutout.
+			-- Swapped after the camera's own update, so the vehicle camera never runs a frame with a non-seat subject.
+			if camera.CameraSubject ~= body then camera.CameraSubject = body end
 			kick = math.max(0, kick - dt / 1.5)
 			local fov = 70 + 12 * math.clamp(speed / R.BOOST_SPEED, 0, 1) + 10 * kick
 			camera.FieldOfView += (fov - camera.FieldOfView) * (1 - math.exp(-dt * 6))

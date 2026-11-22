@@ -4,10 +4,10 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-22
 
-- **Race feel and fairness** (place v103):
+- **Race feel and fairness** (place v103, camera and HUD reworked in v104):
   - **Driving:** the car reaches top speed in about 2.5 s (was 5), the steering follows the stick in 0.12 s (was 0.3), and pressing W while rolling backwards brakes first. Steering eases off a little at boost speed. The cutout leans into turns.
-  - **Chase camera:** while racing, the camera sits behind your car and swings round with it, so it no longer bounces with the hop and phone players don't have to drag it. The view widens with speed and kicks out on a boost. It hands back to the normal camera when the race ends.
-  - **HUD:** the pill shows place, time left (red under 15 s) and lap. "GO!" pops exactly when the lights go green, and "FINAL LAP!" when you start the last lap. Your finishing time shows when you finish. "WRONG WAY!" shows if you drive the loop backwards.
+  - **Camera:** while racing you keep the normal free camera (drag to look around, zoom, works on phones). It follows the car's body instead of the seat, so it no longer bounces with the hop. The view widens with speed and kicks out on a boost.
+  - **HUD:** three chips at the top in the same studded style as the side menus: place (crown), time left (clock, red under 15 s) and lap (rocket). "GO!" pops exactly when the lights go green, and "FINAL LAP!" when you start the last lap. Your finishing time shows when you finish. "WRONG WAY!" shows if you drive the loop backwards.
   - **Never stuck:** a RESET button under the pill (R on keyboard, Y on a gamepad, 3 s cooldown) puts you back on the track a car length or two behind where you were, on a lane clear of logs, hay and rocks, facing the right way. The server does this by itself if you leave the loop for 1.5 s or make no headway for 8 s. After 2.5 s pinned against something the HUD suggests a reset.
   - **No shoving:** race cars and riders pass through each other, and people walking on the track don't block cars (new `Walker` and `RaceRider` collision groups).
   - **Back to the pad:** when your race ends (finished, quit or time up) you stand beside the sign-up pad again, ready for the next one.
