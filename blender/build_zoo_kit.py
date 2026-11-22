@@ -827,20 +827,39 @@ def race_track():
             c = "gravelDark" if k == 0 else "earth" if k >= ROWS + 1 else "gravel"   # one even tone: face blotches read as tiles; pebbles give the grain
             faces[c].append(f)
     for c, fs in faces.items(): _raw(p, c, verts, fs)
-    rnd = random.Random(42)
+    return p   # the pebbles and edging stones are race_stones(): one huge scattered mesh renders broken in Roblox
+
+
+STONE_SECTORS = 8
+
+
+def _track_scatter():
+    """Pebbles and edging stones as (colour, radius, matrix, jitter, seed, angle), in the same random order as always."""
+    rnd, out = random.Random(42), []
     for k in range(1300):                                    # pebbles: flat chips pressed into the surface
         a = rnd.uniform(0, 2 * math.pi)
         r0, r1 = track_edges(a)
         r = rnd.uniform(r0 + 0.6, r1 - 0.6)
-        p.ico("pebbleLight" if k % 3 == 0 else "pebble", rnd.uniform(0.22, 0.55), 0,
-              T(r * math.cos(a), r * math.sin(a), TRACK_TOP + 0.02) @ Rz(rnd.uniform(0, 360)) @ S(1.3, 1.0, 0.38), 0.2, k)
-    for edge in (0, 1):                                      # low edging stones, sunk half into the gravel
+        out.append(("pebbleLight" if k % 3 == 0 else "pebble", rnd.uniform(0.22, 0.55),
+                    T(r * math.cos(a), r * math.sin(a), TRACK_TOP + 0.05) @ Rz(rnd.uniform(0, 360)) @ S(1.3, 1.0, 0.38), 0.2, k, a))
+    for edge in (0, 1):                                      # low edging stones, a bit under half sunk: deeper leaves only slivers showing
         n = 150 if edge == 0 else 175
         for k in range(n):
             a = 2 * math.pi * (k + rnd.uniform(-0.3, 0.3)) / n
-            r = track_edges(a)[edge] + (rnd.uniform(-0.3, 0.2) if edge == 0 else rnd.uniform(-0.2, 0.4))
-            p.ico("rock", rnd.uniform(0.7, 1.25), 0,
-                  T(r * math.cos(a), r * math.sin(a), TRACK_TOP - 0.1) @ Rz(rnd.uniform(0, 360)) @ S(1.35, 1.0, 0.6), 0.22, 1000 + k + edge * 500)
+            # outer stones sit just inside the edge, never out over the shoulder slope
+            r = track_edges(a)[edge] + (rnd.uniform(-0.3, 0.2) if edge == 0 else rnd.uniform(-0.2, 0.4) - 0.5)
+            out.append(("rock", rnd.uniform(0.7, 1.25),
+                        T(r * math.cos(a), r * math.sin(a), TRACK_TOP + 0.1) @ Rz(rnd.uniform(0, 360)) @ S(1.35, 1.0, 0.6), 0.22, 1000 + k + edge * 500, a))
+    return out
+
+
+def race_stones(s):
+    """One 45-degree sector of the track's pebbles and edging stones, origin = zoo centre like RaceTrack.
+    Split up because Roblox draws a single mesh with thousands of loose chips spread over 320 studs with stray triangles."""
+    p = Piece("RaceStones%d" % (s + 1), bevel=0.0, flat=("pebble", "pebbleLight", "rock"))
+    for color, r, M, jitter, seed, a in _track_scatter():
+        if int((a % (2 * math.pi)) / (2 * math.pi) * STONE_SECTORS) == s:
+            p.ico(color, r, 0, M, jitter, seed)
     return p
 
 
@@ -1155,7 +1174,7 @@ def sam_outfit():
 PIECES = [enclosure, easel, signboard, tree_round, tree_acacia, bush, rock, grass_tuft, lamp_post, bench,
           hedge, hedge_post, gate, hill, leaderboard, plaza, showcase, island, tree_palm, bush_flower, flowers, trader_stall, sam_hat, sam_outfit, race_grounds,
           race_track, race_start, race_log, race_hay, race_rocks, race_mud, boost_ring, race_pad,
-          map_ground, border_fence]
+          map_ground, border_fence] + [lambda s=s: race_stones(s) for s in range(STONE_SECTORS)]
 SPACING = 400.0
 
 

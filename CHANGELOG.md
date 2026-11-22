@@ -2,6 +2,14 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-22
+
+- **Race track no longer looks glitched:** big grey wedges covered the gravel, and edging stones showed as hollow slivers.
+  - **Cause:** the pebbles and edging stones were three single meshes, each with thousands of loose chips spread over 320 studs. Roblox drew them with long stray triangles, whatever the render fidelity, even though the uploaded data is clean.
+  - **Fix:** they are now 8 sector pieces (`race_stones()` in `blender/build_zoo_kit.py`, uploaded as `ZooKit_RaceStones_v1`), placed inside `RaceTrack` in the workspace and in the `ZooKit` template. Same stones, same spots.
+  - **Edging stones:** they sit a little higher (+0.2 studs), and the outer ones a little further in, so none sink until only a sliver shows. Pebbles are +0.03.
+  - The old meshes are kept in `ServerStorage.OldEnclosures.RaceTrackStones_v0`.
+
 ## 2026-11-21
 
 Scripts re-exported from Studio at place v108. This also catches up work saved in Studio but never pushed to the repo: the Admin Panel (`ZooAdmin`), the weather events (`ZooWeather`, Matrix weather), the race reset and solo runs, and the stall build/check helpers.
