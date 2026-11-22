@@ -4,7 +4,7 @@
 --     isAdmin on the server and validates every argument, so a client that fires it itself gets nothing.
 --   * the old chat commands, kept as a shortcut: /give cash 1.5m | luck 30 | money 30 | animal mythic rainbow 5 |
 --     pass vip, and /take pass vip.
--- Moderation (Mod tab): KICK (Players tab), WIPE a save and BAN / UNBAN, also for offline players by username or UserId.
+-- Moderation (Moderate tab): KICK (Players tab), WIPE a save and BAN / UNBAN, also for offline players by username or UserId.
 -- Nobody can wipe or ban themselves or another admin. Bans live in the ZooBansV1 DataStore (checked on join) and are
 -- also sent to Players:BanAsync, which blocks them before they even join (and their alts) when Roblox allows it.
 -- Passes given this way are a flag in that player's save only: no real purchase is made or touched.
