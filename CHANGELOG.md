@@ -4,6 +4,17 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-22
 
+- **Race feel and fairness** (place v103; camera and HUD reworked in v104 and v105):
+  - **Driving:** the car reaches top speed in about 2.5 s (was 5), the steering follows the stick in 0.12 s (was 0.3), and pressing W while rolling backwards brakes first. Steering eases off a little at boost speed. The cutout leans into turns.
+  - **Camera:** Roblox's vehicle camera: drag to look around and zoom (phones too), and it swings back behind the car as you drive. The seat is welded to the car body instead of the hopping cutout, so the camera doesn't bounce. The view widens with speed and kicks out on a boost. (v104 followed the body with the plain camera, which never turned with the car and made steering confusing.)
+  - **HUD:** three chips at the top in the same studded style as the side menus: place (crown), time left (clock, red under 15 s) and lap (rocket). "GO!" pops exactly when the lights go green, and "FINAL LAP!" when you start the last lap. Your finishing time shows when you finish. "WRONG WAY!" shows if you drive the loop backwards.
+  - **Never stuck:** a RESET button under the pill (R on keyboard, Y on a gamepad, 3 s cooldown) puts you back on the track a car length or two behind where you were, on a lane clear of logs, hay and rocks, facing the right way. The server does this by itself if you leave the loop for 1.5 s or make no headway for 8 s. After 2.5 s pinned against something the HUD suggests a reset.
+  - **No shoving:** race cars and riders pass through each other, and people walking on the track don't block cars (new `Walker` and `RaceRider` collision groups).
+  - **Back to the pad:** when your race ends (finished, quit or time up) you stand beside the sign-up pad again, ready for the next one.
+  - **Solo runs:** on a live server, someone alone in the queue for 30 s gets a solo run instead of waiting forever. Solo runs pay the finisher's cash, not the prize wheel.
+  - **Anti-cheat:** the server credits progress no faster than that car's own top speed (normal, boost or mud), with 1.5 s of slack for laggy connections, instead of always allowing boost speed.
+  - Settings: `Config.RACE` ACCEL 24, BRAKE 40, STEER_LAG 0.12, SOLO_WAIT, RESET_COOLDOWN; REVERSE_SPEED 18 copied back from Studio. `RaceLayout.RETURN` is the spot beside the pad.
+
 - **Roblox policy fixes** (repo only, not in Studio yet). Robux luck items (2x Luck pass, Luck Boost, Starter Pack) count as "probability modifiers" under Roblox's [paid random items policy](https://create.roblox.com/docs/production/monetization/paid-random-items).
   - **Odds window:** shows every rarity with your odds now and with 2x luck, and every mutation's odds (they follow the live weather). The numbers have 4 significant digits and the window has Roblox's rounding note. It updates live while open. There are now ODDS buttons on the Luck Boost and Starter Pack cards too.
   - **Region check:** `PolicyService.ArePaidRandomItemsRestricted` players see N/A on those three items and can't open their purchase prompts.
