@@ -4,7 +4,7 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-22
 
-- **Admin Panel** (a red hammer ADMIN button under the left menu, admins only). Replaces typing commands; `/give`, `/take`, `/weather` and `/reset` still work as shortcuts.
+- **Admin Panel** (place v95; a red hammer ADMIN button under the left menu, admins only). Replaces typing commands; `/give`, `/take`, `/weather` and `/reset` still work as shortcuts.
   - **Security:** every button calls one RemoteFunction, `Remotes.Admin` (created by `ZooAdmin`). The server re-checks `isAdmin` on every call, rate-limits it, validates every argument and never trusts the client. The `Admin` player attribute only decides whether the button shows. Announcement and countdown text goes through Roblox's text filter.
   - **Players:** everyone in the server with avatar, cash, income and zoo size. GIVE (picks them for the Give tab), GO TO, BRING and KICK (press twice; admins can't be kicked).
   - **Give:** to yourself or the picked player: cash (K/M/B/T, or TAKE), minutes of 2x luck or 2x money, an animal (rarity, mutation, stars), and VIP / Money2x / Luck2x test flags. Both the admin and the player get a toast.
