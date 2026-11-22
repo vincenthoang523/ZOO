@@ -271,6 +271,7 @@ function actions.announce(admin, p)
 	if not clean then return false, "Couldn't check that message, try again" end
 	Zoo:SetAttribute("AnnounceText", clean)
 	Zoo:SetAttribute("AnnounceFrom", admin.DisplayName)
+	Zoo:SetAttribute("AnnounceUserId", admin.UserId) -- clients show the announcer's headshot
 	Zoo:SetAttribute("AnnounceSeconds", math.clamp(math.floor(tonumber(p.seconds) or 8), 3, 30))
 	Zoo:SetAttribute("AnnounceId", (Zoo:GetAttribute("AnnounceId") or 0) + 1)
 	return true, "Announcement sent"

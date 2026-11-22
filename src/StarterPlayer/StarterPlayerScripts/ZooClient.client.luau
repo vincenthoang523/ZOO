@@ -1693,7 +1693,7 @@ do
 
 	-- announcement: a big card that pops in over the upper middle of the screen for AnnounceSeconds
 	local holder = scaled(new("Frame", { Name = "Announcement", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0.17, 0), Size = O(760, 150),
-		BackgroundTransparency = 1, Visible = false, ZIndex = 30 }, hud))
+		BackgroundTransparency = 1, Visible = false, ZIndex = 30 }, gui)) -- on gui, not hud, so it shows over open windows
 	local card0 = new("Frame", { Name = "Card", Size = S(1, 1), BackgroundColor3 = P.red[3] }, holder)
 	round(card0, 18)
 	ink(card0, 5)
@@ -1701,7 +1701,10 @@ do
 	grad(face, { hex("FF5A3D"), hex("D8000F") })
 	studs(face, 0.7, nil, 17)
 	rays(face, 190, O(86, 70), C.yellow)
-	sticker(face, "newspaper", 104, O(86, 70), true)
+	local news = sticker(face, "newspaper", 104, O(86, 70), true)
+	-- the announcer's Roblox headshot replaces the newspaper; if it can't load, the newspaper stays
+	local avatar = round(new("ImageLabel", { Name = "Avatar", AnchorPoint = CENTER, Position = O(86, 70), Size = O(112, 112), BackgroundColor3 = hex("3A4A72"), Visible = false }, face), 56)
+	ink(avatar, 4)
 	local head = label(face, "ANNOUNCEMENT", 26, { Position = O(160, 8), Size = O(560, 32), TextXAlignment = LEFT })
 	goldText(head)
 	local text = label(face, "", 30, { Position = O(160, 38), Size = O(580, 76), TextXAlignment = LEFT, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true,
@@ -1715,6 +1718,14 @@ do
 		if id == shownId then return end
 		shownId = id
 		text.Text = Zoo:GetAttribute("AnnounceText") or ""
+		avatar.Visible, news.Visible = false, true
+		local uid = Zoo:GetAttribute("AnnounceUserId")
+		if uid then
+			task.spawn(function()
+				local ok, img = pcall(Players.GetUserThumbnailAsync, Players, uid, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+				if ok and shownId == id then avatar.Image, avatar.Visible, news.Visible = img, true, false end
+			end)
+		end
 		from.Text = "- " .. (Zoo:GetAttribute("AnnounceFrom") or "Admin")
 		holder.Visible = true
 		pop.Scale = 0.5

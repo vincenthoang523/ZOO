@@ -9,7 +9,7 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
   - **Players:** everyone in the server with avatar, cash, income and zoo size. GIVE (picks them for the Give tab), GO TO, BRING and KICK (press twice; admins can't be kicked).
   - **Give:** to yourself or the picked player: cash (K/M/B/T, or TAKE), minutes of 2x luck or 2x money, an animal (rarity, mutation, stars), and VIP / Money2x / Luck2x test flags. Both the admin and the player get a toast.
   - **Events:** a tile per weather (Matrix) plus two new server-wide events, 2x LUCK and 2x MONEY for everyone (`Config.BOOST_EVENTS`, applied in ZooServer's `luck()` and `rate()`). Duration in seconds, START and STOP. Running events show a strip with a countdown under the weather banner for every player.
-  - **Announce:** a message (150 characters) that pops up as a big card for every player with the admin's name, for 5-30 seconds.
+  - **Announce:** a message (150 characters) that pops up as a big card for every player with the admin's Roblox headshot and name, for 5-30 seconds.
   - **Timer:** a titled countdown strip every player sees, which says NOW! at zero.
   - **Server:** players, uptime and place version; random weather on/off; stop all events; respawn everyone.
   - The weather banner, the event strips and the countdown now stack in one column at the top (`topStack`); toasts drop under it. `window()` takes an optional rim colour (the panel is red).
