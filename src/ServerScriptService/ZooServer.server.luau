@@ -245,17 +245,29 @@ local resetCommand = Instance.new("TextChatCommand")
 resetCommand.Name = "ZooResetCommand"
 resetCommand.PrimaryAlias = "/reset"
 resetCommand.Parent = TextChatService
+-- deletes a player's save; if they're in this server their session restarts as a brand-new player (intro included).
+-- Used by /reset and the Admin Panel's WIPE (ZooAdmin, through Api.wipe). Returns ok, error.
+local function wipe(userId)
+	local player = Players:GetPlayerByUserId(userId)
+	if player and not sessions[player] then return false, "they're still loading, try again in a moment" end
+	local ok, err = pcall(store.RemoveAsync, store, tostring(userId))
+	if not ok then return false, tostring(err) end
+	local s = player and sessions[player]
+	if s then
+		s.data, s.loaded, s.offlinePending, s.offlineNotice = newData(), true, nil, nil
+		changed(player)
+		if player.Character then task.spawn(toPlot, player, player.Character) end
+		player:SetAttribute("IntroDone", false)
+	end
+	return true
+end
+
 resetCommand.Triggered:Connect(function(source)
 	local player = Players:GetPlayerByUserId(source.UserId)
-	local s = player and sessions[player]
-	if not s or not isAdmin(player) then return end
-	local ok, err = pcall(store.RemoveAsync, store, tostring(player.UserId))
-	if not ok then return notify(player, "Reset failed: " .. tostring(err), Color3.fromRGB(255, 90, 90)) end
-	s.data, s.loaded, s.offlinePending, s.offlineNotice = newData(), true, nil, nil
+	if not player or not sessions[player] or not isAdmin(player) then return end
+	local ok, err = wipe(player.UserId)
+	if not ok then return notify(player, "Reset failed: " .. err, Color3.fromRGB(255, 90, 90)) end
 	notify(player, "Save wiped - starting fresh.", Color3.fromRGB(255, 220, 80))
-	changed(player)
-	if player.Character then task.spawn(toPlot, player, player.Character) end
-	player:SetAttribute("IntroDone", false)
 end)
 
 local function findAnimal(s, id)
@@ -441,6 +453,7 @@ end
 ----- API for the other server scripts (ZooRace); never exposed to clients -----
 function Api.session(player) return sessions[player] end
 Api.isAdmin = isAdmin
+Api.wipe = wipe
 function Api.findAnimal(player, id)
 	local s = sessions[player]
 	return s and findAnimal(s, id)

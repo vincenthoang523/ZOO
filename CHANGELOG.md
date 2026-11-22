@@ -4,6 +4,14 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-22
 
+- **Admin Panel: wipe, ban and unban** (place v117). New **Moderate** tab, and a **MOD** button on each Players row that opens it on that player.
+  - Find anyone by username or UserId, in this server or offline. The bar shows who they are and whether they're banned.
+  - **Wipe save** deletes their whole save (same as `/reset`, now shared as `Api.wipe` in `ZooServer`); passes bought with Robux stay. If they're in another server, a `MessagingService` message makes that server restart them too, so it can't save the old data back.
+  - **Ban** for 1 day, 7 days or forever, with an optional reason (text-filtered, the player sees it). Stored in the `ZooBansV1` DataStore and checked on join, and also sent to `Players:BanAsync` (blocks alts and stops them before they join; it returns 403 in Studio, so Studio tests rely on the DataStore list). Banned players in other servers are kicked through `MessagingService`.
+  - **Unban** from the bar or from the Banned Players list.
+  - **Kick** works as before (Players tab, and also in Moderate). Wipe, Ban and Kick ask SURE? first.
+  - Nobody can wipe or ban themselves or another admin. The server re-checks this on every call, including for offline admins (Config.ADMINS, or group rank 255; if the group lookup fails it refuses).
+
 - **Race track no longer looks glitched:** big grey wedges covered the gravel, and edging stones showed as hollow slivers.
   - **Cause:** the pebbles and edging stones were three single meshes, each with thousands of loose chips spread over 320 studs. Roblox drew them with long stray triangles, whatever the render fidelity, even though the uploaded data is clean.
   - **Fix:** they are now 8 sector pieces (`race_stones()` in `blender/build_zoo_kit.py`, uploaded as `ZooKit_RaceStones_v1`), placed inside `RaceTrack` in the workspace and in the `ZooKit` template. Same stones, same spots.
