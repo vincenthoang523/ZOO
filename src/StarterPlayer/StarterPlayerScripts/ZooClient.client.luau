@@ -2056,8 +2056,8 @@ do
 				ink(av, 3)
 				local name = label(f, p.displayName, 26, { Position = O(82, 6), Size = O(220, 34), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
 				if p.admin then name.TextColor3 = hex("FF8A80") end
-				label(f, "@" .. p.name, 16, { Position = O(83, 38), Size = O(220, 20), TextXAlignment = LEFT, TextColor3 = hex("B8C2E0"), TextTruncate = Enum.TextTruncate.AtEnd })
-				label(f, "$" .. Config.format(p.cash) .. "  ·  <font color=\"#6BFF3A\">+$" .. Config.format(p.rate) .. "/s</font>  ·  " .. p.animals .. " animals", 16,
+				label(f, "@" .. p.name .. "  ·  " .. p.animals .. " animals", 16, { Position = O(83, 38), Size = O(220, 20), TextXAlignment = LEFT, TextColor3 = hex("B8C2E0"), TextTruncate = Enum.TextTruncate.AtEnd })
+				label(f, "$" .. Config.format(p.cash) .. "  ·  <font color=\"#6BFF3A\">+$" .. Config.format(p.rate) .. "/s</font>", 16,
 					{ Position = O(83, 56), Size = O(225, 20), TextXAlignment = LEFT, TextColor3 = C.yellow, TextTruncate = Enum.TextTruncate.AtEnd })
 				local x = 312
 				local function act(str, pal, w, cb, sure)
@@ -2418,7 +2418,7 @@ do
 				if not picked.here then return toast(picked.name .. " isn't in this server", C.red) end
 				act("player", { target = picked.userId, op = "kick" })
 			end, { icon = "cross", iconSize = 34, text = 24 })
-			label(c, "Wipe deletes their whole save (cash, animals, upgrades); bought game passes stay. Works for offline players too.", 16,
+			label(c, "Wipe deletes their save (cash, animals, upgrades). Bought passes stay. Works offline too.", 16,
 				{ Position = O(0, 392), Size = O(W, 22), TextColor3 = hex("9AA6C8") })
 
 			local function show1(d) -- fill the bar with a lookup result
