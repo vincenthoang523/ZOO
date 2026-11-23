@@ -22,7 +22,7 @@ local sessions = {} -- [Player] = { data, loaded, plot, passes, lastCreate, last
 local rng = Random.new()
 
 local function newData()
-	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, moneyUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false, passGrants = {} }
+	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, moneyUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false, passGrants = {}, starterBought = false }
 end
 
 ----- maths -----
@@ -67,7 +67,9 @@ local function sync(player, full)
 	if full then
 		Remotes.State:FireClient(player, {
 			luckLevel = s.data.luckLevel, capLevel = s.data.capLevel, capacity = capacity(s), animals = s.data.animals,
-			dailyDay = s.data.dailyDay, dailyWait = math.max(0, s.data.dailyAt + Config.DAILY_COOLDOWN - os.time()),
+			-- a streak broken by a missed day shows as Day 1, which is what ClaimDaily will pay
+			dailyDay = os.time() - s.data.dailyAt > Config.DAILY_RESET and 0 or s.data.dailyDay, dailyWait = math.max(0, s.data.dailyAt + Config.DAILY_COOLDOWN - os.time()),
+			starterBought = s.data.starterBought == true,
 			boostLeft = math.max(0, s.data.boostUntil - os.time()), moneyLeft = math.max(0, s.data.moneyUntil - os.time()), passes = s.passes, freeClaimed = s.data.freeClaimed,
 			offline = s.offlineNotice, -- sent once, for the Welcome Back popup
 		})
@@ -245,17 +247,29 @@ local resetCommand = Instance.new("TextChatCommand")
 resetCommand.Name = "ZooResetCommand"
 resetCommand.PrimaryAlias = "/reset"
 resetCommand.Parent = TextChatService
+-- deletes a player's save; if they're in this server their session restarts as a brand-new player (intro included).
+-- Used by /reset and the Admin Panel's WIPE (ZooAdmin, through Api.wipe). Returns ok, error.
+local function wipe(userId)
+	local player = Players:GetPlayerByUserId(userId)
+	if player and not sessions[player] then return false, "they're still loading, try again in a moment" end
+	local ok, err = pcall(store.RemoveAsync, store, tostring(userId))
+	if not ok then return false, tostring(err) end
+	local s = player and sessions[player]
+	if s then
+		s.data, s.loaded, s.offlinePending, s.offlineNotice = newData(), true, nil, nil
+		changed(player)
+		if player.Character then task.spawn(toPlot, player, player.Character) end
+		player:SetAttribute("IntroDone", false)
+	end
+	return true
+end
+
 resetCommand.Triggered:Connect(function(source)
 	local player = Players:GetPlayerByUserId(source.UserId)
-	local s = player and sessions[player]
-	if not s or not isAdmin(player) then return end
-	local ok, err = pcall(store.RemoveAsync, store, tostring(player.UserId))
-	if not ok then return notify(player, "Reset failed: " .. tostring(err), Color3.fromRGB(255, 90, 90)) end
-	s.data, s.loaded, s.offlinePending, s.offlineNotice = newData(), true, nil, nil
+	if not player or not sessions[player] or not isAdmin(player) then return end
+	local ok, err = wipe(player.UserId)
+	if not ok then return notify(player, "Reset failed: " .. err, Color3.fromRGB(255, 90, 90)) end
 	notify(player, "Save wiped - starting fresh.", Color3.fromRGB(255, 220, 80))
-	changed(player)
-	if player.Character then task.spawn(toPlot, player, player.Character) end
-	player:SetAttribute("IntroDone", false)
 end)
 
 local function findAnimal(s, id)
@@ -269,7 +283,7 @@ end
 on("Create", function(player, s, raw)
 	local design = Render.sanitize(raw)
 	if not design then return notify(player, "Draw your animal first!") end
-	if #s.data.animals >= Config.MAX_INVENTORY then return notify(player, "Your zoo is full! Release an animal first.") end
+	if #s.data.animals >= Config.MAX_INVENTORY then return notify(player, "Your zoo is full! Sell an animal first.") end
 	local now = os.clock()
 	if now - s.lastCreate < Config.CREATE_COOLDOWN then return notify(player, "Your pencil needs a short rest...") end
 	s.lastCreate = now
@@ -290,7 +304,7 @@ on("Create", function(player, s, raw)
 		if roll < 0 then rarity = i break end
 	end
 	-- roll 2: mutation; the current weather (ZooWeather) boosts its own mutation
-	local mChances, mroll, mutation = Config.mutationChances(Zoo:GetAttribute("Weather")), rng:NextNumber(), 1
+	local mChances, mroll, mutation = Config.mutationChances(Zoo:GetAttribute("Weather"), luck(s)), rng:NextNumber(), 1
 	for i, p in mChances do
 		mroll -= p
 		if mroll < 0 then mutation = i break end
@@ -301,10 +315,22 @@ on("Create", function(player, s, raw)
 	local mult = starMult * rarityMult * mutMult
 	local income = math.floor(Config.BASE_RATE * mult)
 	local animal = { id = HttpService:GenerateGUID(false), d = design, r = rarity, m = mutation, st = stars, inc = income, eq = equippedCount(s) < capacity(s) }
+	-- a full zoo: a better animal takes the place of the weakest one, so a good roll never hides in storage
+	local placed, swapped = animal.eq and "zoo" or "storage", nil
+	if not animal.eq then
+		local worst
+		for _, a in s.data.animals do
+			if a.eq and (not worst or Config.income(a) < Config.income(worst)) then worst = a end
+		end
+		if worst and income > Config.income(worst) then
+			worst.eq, animal.eq, placed, swapped = false, true, "swapped", worst.d.n
+		end
+	end
 	table.insert(s.data.animals, animal)
 	Remotes.Rolled:FireClient(player, {
 		name = name, d = design, r = rarity, m = mutation, rChance = chances[rarity], mChance = mChances[mutation],
 		scores = scores, stars = stars, starMult = starMult, rarityMult = rarityMult, mutMult = mutMult, mult = mult, inc = income,
+		placed = placed, swapped = swapped,
 	})
 	changed(player)
 end)
@@ -343,9 +369,14 @@ on("Sell", function(player, s, id)
 end)
 
 on("SellAll", function(player, s)
+	-- never sells an unequipped animal that out-earns the weakest one in the zoo: that one belongs in the zoo, not the bin
+	local worst
+	for _, a in s.data.animals do
+		if a.eq and (not worst or Config.income(a) < worst) then worst = Config.income(a) end
+	end
 	local keep, total, n = {}, 0, 0
 	for _, a in s.data.animals do
-		if a.eq then
+		if a.eq or (worst and Config.income(a) > worst) then
 			table.insert(keep, a)
 		else
 			total += Config.sellPrice(a)
@@ -387,7 +418,7 @@ on("ClaimDaily", function(player, s)
 	if now - d.dailyAt < Config.DAILY_COOLDOWN then return end
 	if now - d.dailyAt > Config.DAILY_RESET then d.dailyDay = 0 end -- missed a day: streak restarts
 	local reward = Config.DAILY[d.dailyDay % #Config.DAILY + 1]
-	d.cash += reward.cash or 0
+	d.cash += Config.dailyCash(reward, rate(s))
 	if reward.luckMin then addBoost(s, reward.luckMin) end
 	d.dailyDay += 1
 	d.dailyAt = now
@@ -426,6 +457,8 @@ MarketplaceService.ProcessReceipt = function(receipt)
 	if receipt.ProductId == Config.PRODUCTS.LuckBoost then
 		addBoost(s, Config.LUCK_BOOST_MINUTES)
 	elseif receipt.ProductId == Config.PRODUCTS.StarterPack then
+		-- once per player: the client hides it after this. A repeat purchase that slips through is still paid in full.
+		s.data.starterBought = true
 		s.data.cash += Config.STARTER_PACK.cash
 		addBoost(s, Config.STARTER_PACK.luckMin)
 	elseif receipt.ProductId == Config.PRODUCTS.OfflineDouble and (s.offlinePending or 0) > 0 then
@@ -441,6 +474,7 @@ end
 ----- API for the other server scripts (ZooRace); never exposed to clients -----
 function Api.session(player) return sessions[player] end
 Api.isAdmin = isAdmin
+Api.wipe = wipe
 function Api.findAnimal(player, id)
 	local s = sessions[player]
 	return s and findAnimal(s, id)

@@ -4,6 +4,9 @@
 --     isAdmin on the server and validates every argument, so a client that fires it itself gets nothing.
 --   * the old chat commands, kept as a shortcut: /give cash 1.5m | luck 30 | money 30 | animal mythic rainbow 5 |
 --     pass vip, and /take pass vip.
+-- Moderation (Moderate tab): KICK (Players tab), WIPE a save and BAN / UNBAN, also for offline players by username or UserId.
+-- Nobody can wipe or ban themselves or another admin. Bans live in the ZooBansV1 DataStore (checked on join) and are
+-- also sent to Players:BanAsync, which blocks them before they even join (and their alts) when Roblox allows it.
 -- Passes given this way are a flag in that player's save only: no real purchase is made or touched.
 -- Admins get the Admin attribute (true) so their client shows the panel button; it is only a hint for the UI.
 local Players = game:GetService("Players")
@@ -11,6 +14,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
+local DataStoreService = game:GetService("DataStoreService")
+local MessagingService = game:GetService("MessagingService")
+local GroupService = game:GetService("GroupService")
 
 local Zoo = ReplicatedStorage:WaitForChild("Zoo")
 local Config = require(Zoo.Config)
@@ -211,8 +217,155 @@ local function short(v, max) -- a remote argument that must be a short string or
 	return v
 end
 
+----- moderation -----
+-- shortcut: every ban sits in one key (fine up to a few thousand bans); split it per user if the list ever gets that big
+local banStore = DataStoreService:GetDataStore("ZooBansV1")
+local BAN_KEY = "all"
+local TOPIC = "ZooModeration" -- tells other servers to kick a banned player or restart a wiped one
+
+local function activeBan(list, id) -- list[userId] = { n = name, r = reason, by = admin name, at = os.time(), ends = os.time() or 0 forever }
+	local b = list[tostring(id)]
+	if b and (b.ends == 0 or b.ends > os.time()) then return b end
+	return nil
+end
+
+local function banList() -- nil if the DataStore couldn't be read
+	local ok, list = pcall(banStore.GetAsync, banStore, BAN_KEY)
+	if not ok then return nil end
+	return typeof(list) == "table" and list or {}
+end
+
+local function editBans(edit) -- returns ok; drops expired bans while it's at it
+	return (pcall(banStore.UpdateAsync, banStore, BAN_KEY, function(list)
+		list = typeof(list) == "table" and list or {}
+		for id in list do
+			if not activeBan(list, id) then list[id] = nil end
+		end
+		edit(list)
+		return list
+	end))
+end
+
+local function banText(b)
+	local text = "You are banned from Draw a Zoo"
+	if b.ends > 0 then text ..= " until " .. os.date("!%Y-%m-%d %H:%M UTC", b.ends) end
+	return text .. (b.r ~= "" and (": " .. b.r) or ".")
+end
+
+local function broadcast(msg)
+	local ok, err = pcall(MessagingService.PublishAsync, MessagingService, TOPIC, msg)
+	if not ok then warn("[ZooAdmin] couldn't reach other servers:", err) end
+end
+
+-- a username ("@name" works) or UserId -> userId, username; or nil, why not
+local function resolve(q)
+	q = short(q, 30)
+	q = q and q:match("^%s*@?(.-)%s*$")
+	if not q or q == "" then return nil, "Type a username or UserId" end
+	local id = tonumber(q)
+	if not id then
+		if not q:match("^[%w_]+$") then return nil, "Usernames only have letters, numbers and _" end
+		local ok, found = pcall(Players.GetUserIdFromNameAsync, Players, q)
+		if not ok or not found then return nil, "No Roblox user called " .. q end
+		id = found
+	end
+	id = math.floor(id)
+	local ok, name = pcall(Players.GetNameFromUserIdAsync, Players, id)
+	if not ok then return nil, "No Roblox user with id " .. id end
+	return id, name
+end
+
+-- isAdmin for someone who may be offline. Unsure (the group lookup failed) counts as an admin, so nothing happens to them.
+local function isAdminId(id)
+	local p = Players:GetPlayerByUserId(id)
+	if p then return Api.isAdmin(p) end
+	if table.find(Config.ADMINS, id) then return true end
+	if game.CreatorType ~= Enum.CreatorType.Group then return id == game.CreatorId end
+	local ok, groups = pcall(GroupService.GetGroupsAsync, GroupService, id)
+	if not ok then return true end
+	for _, g in groups do
+		if g.Id == game.CreatorId then return g.Rank == 255 end
+	end
+	return false
+end
+
+local function refuse(admin, id, verb) -- why `admin` may not `verb` this user, or nil
+	if id == admin.UserId then return "You can't " .. verb .. " yourself" end
+	if isAdminId(id) then return "You can't " .. verb .. " an admin" end
+	return nil
+end
+
 -- every panel action: function(admin, payload) -> ok, message[, data]
 local actions = {}
+
+function actions.lookup(admin, p)
+	local id, name = resolve(p.user)
+	if not id then return false, name end
+	local list = banList()
+	return true, nil, { userId = id, name = name, here = Players:GetPlayerByUserId(id) ~= nil, admin = isAdminId(id),
+		me = id == admin.UserId, ban = list and activeBan(list, id) }
+end
+
+function actions.wipe(admin, p)
+	local id, name = resolve(p.user)
+	if not id then return false, name end
+	local no = refuse(admin, id, "wipe")
+	if no then return false, no end
+	local ok, err = Api.wipe(id)
+	if not ok then return false, "Wipe failed: " .. err end
+	local here = Players:GetPlayerByUserId(id)
+	if here then
+		Api.notify(here, "An admin wiped your save - starting fresh.", BAD)
+	else
+		broadcast({ op = "wipe", id = id }) -- if they're in another server, that server must drop the copy it would save back
+	end
+	return true, "Wiped " .. name .. "'s save"
+end
+
+local BAN_DAYS = { [0] = true, [1] = true, [7] = true } -- 0 = forever
+function actions.ban(admin, p)
+	local id, name = resolve(p.user)
+	if not id then return false, name end
+	local no = refuse(admin, id, "ban")
+	if no then return false, no end
+	local days = tonumber(p.days) or -1
+	if not BAN_DAYS[days] then return false, "Pick how long" end
+	local reason = typeof(p.reason) == "string" and p.reason:gsub("%s+", " "):match("^%s*(.-)%s*$") or ""
+	if #reason > 100 then return false, "Reason: 100 characters at most" end
+	if reason ~= "" then
+		reason = filtered(admin, reason) -- the banned player sees it
+		if not reason then return false, "Couldn't check that reason, try again" end
+	end
+	local record = { n = name, r = reason, by = admin.Name, at = os.time(), ends = days == 0 and 0 or os.time() + days * 86400 }
+	if not editBans(function(list) list[tostring(id)] = record end) then return false, "Couldn't save the ban, try again" end
+	local ok, err = pcall(Players.BanAsync, Players, { UserIds = { id }, ApplyToUniverse = true, Duration = days == 0 and -1 or days * 86400,
+		DisplayReason = reason ~= "" and reason or "Banned by an admin", PrivateReason = "Admin Panel: " .. admin.Name .. " (" .. admin.UserId .. ")",
+		ExcludeAltAccounts = false })
+	if not ok then warn("[ZooAdmin] BanAsync failed (the game's own ban list still keeps them out):", err) end
+	local here = Players:GetPlayerByUserId(id)
+	if here then here:Kick(banText(record)) else broadcast({ op = "kick", id = id, text = banText(record) }) end
+	return true, "Banned " .. name .. (days == 0 and " forever" or " for " .. days .. (days == 1 and " day" or " days"))
+end
+
+function actions.unban(admin, p)
+	local id, name = resolve(p.user)
+	if not id then return false, name end
+	if not editBans(function(list) list[tostring(id)] = nil end) then return false, "Couldn't save, try again" end
+	local ok, err = pcall(Players.UnbanAsync, Players, { UserIds = { id }, ApplyToUniverse = true })
+	if not ok then warn("[ZooAdmin] UnbanAsync failed:", err) end
+	return true, "Unbanned " .. name
+end
+
+function actions.bans()
+	local list = banList()
+	if not list then return false, "Couldn't read the ban list" end
+	local rows = {}
+	for id, b in list do
+		if activeBan(list, id) then table.insert(rows, { userId = tonumber(id), name = b.n, reason = b.r, by = b.by, at = b.at, ends = b.ends }) end
+	end
+	table.sort(rows, function(a, b) return a.at > b.at end)
+	return true, nil, rows
+end
 
 function actions.players() return true, nil, { players = playerList(), info = info() } end
 
@@ -333,8 +486,26 @@ end
 
 local function onJoin(p)
 	while not Api.isAdmin do task.wait(0.2) end
-	p:SetAttribute("Admin", Api.isAdmin(p) or nil)
+	local admin = Api.isAdmin(p)
+	p:SetAttribute("Admin", admin or nil)
+	local list = not admin and banList() -- if the ban list can't be read, let them in rather than lock everyone out
+	local b = list and activeBan(list, p.UserId)
+	if b then p:Kick(banText(b)) end
 end
 Players.PlayerAdded:Connect(onJoin)
 Players.PlayerRemoving:Connect(function(p) lastCall[p] = nil end)
 for _, p in Players:GetPlayers() do task.spawn(onJoin, p) end
+
+task.spawn(function() -- bans and wipes made in other servers
+	local ok, err = pcall(MessagingService.SubscribeAsync, MessagingService, TOPIC, function(m)
+		local d = m.Data
+		local p = typeof(d) == "table" and Players:GetPlayerByUserId(tonumber(d.id) or 0)
+		if not p then return end
+		if d.op == "kick" and typeof(d.text) == "string" then
+			p:Kick(d.text)
+		elseif d.op == "wipe" and Api.wipe(p.UserId) then
+			Api.notify(p, "An admin wiped your save - starting fresh.", BAD)
+		end
+	end)
+	if not ok then warn("[ZooAdmin] cross-server moderation is off:", err) end
+end)

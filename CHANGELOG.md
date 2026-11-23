@@ -4,6 +4,22 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-22
 
+- **Playtest report fixes** (from a 30-minute test at place v117):
+  - **Better animals no longer vanish into storage:** with a full zoo, a new animal that out-earns your weakest one takes its place, and the roll screen says where it went (swapped in, or sent to storage). SELL ALL UNEQUIPPED never sells an animal better than your weakest equipped one.
+  - **Judge:** a filled rectangle no longer scores 5 stars (now 3). SIZE peaks at 30-50% of the canvas and falls to 0 for a full canvas, and NEAT drops when the shape runs into all four edges. Every template keeps its stars.
+  - **Daily rewards:** after a missed day the window shows Day 1, which is what gets paid. Cash days now pay minutes of your income (Day 1 = 2 min ... Day 7 = 60 min), with the old amounts as a floor for new zoos. CLAIM! is burning gold so it no longer looks like CLAIMED.
+  - **Luck past 1024x** now raises the mutation odds (x1.5 at 2048x, x2 at 4096x, x2.5 at 8192x), so luck items still do something for maxed players. The Odds screen shows it.
+  - **Starter Pack** is once per player: the rail button hides and the Shop shows OWNED after it's bought (`starterBought` in the save).
+  - **TOP EARNERS** title shows again: `Showcase.BoardHeader` is 3.3 deep instead of 2.912, so its text sits clear of the red sign mesh on both sides.
+  - **Editor:** FINISH DRAWING keeps the drawing until the roll comes back, and checks for a full zoo first. Fill in the Shape tab won't flood the canvas through a gap in the outline. Picking a template jumps to the Paint tab. The name box stops at 20 characters.
+  - **Race:** your own ride shows as a billboard facing your camera, so you can see it from the chase view. The side menus hide while you race.
+  - **New players:** until the first animal, DRAW AN ANIMAL wears a START HERE! tag and a DRAW HERE! sign floats over your easel.
+  - **Phones:** side menus, the cash readout and the race chips never shrink below 0.65x on touch screens. Windows fit by height with room for their titles, so the editor no longer runs off the bottom of wide screens.
+  - **Shop and menus:** BEST! moved from VIP to x2 Money. Closing Odds returns to the window you opened it from. FREE hides once claimed. My Zoo's RELEASE is now SELL (same price as Safari Sam). Selling Epic and up asks SURE? first. My Zoo picks your best earner first, and its $/s no longer overlaps UNEQUIP.
+  - **Other:** a lighter Matrix weather tint, tap to skip the roll screen, toasts move to the bottom of the screen while a window is open, showcase animal names only show up close, and the Free Reward asks players to join the group (`Config.GROUP_ID` = 229775176).
+  - Also synced: `ZooAdmin` and `ZooApi` changes made in Studio (the Admin Panel's Moderate tab: wipe, ban and unban).
+  - Not changed: the game page settings (name, description, age rating, VR), which live in the Creator Hub.
+
 - **Race track no longer looks glitched:** big grey wedges covered the gravel, and edging stones showed as hollow slivers.
   - **Cause:** the pebbles and edging stones were three single meshes, each with thousands of loose chips spread over 320 studs. Roblox drew them with long stray triangles, whatever the render fidelity, even though the uploaded data is clean.
   - **Fix:** they are now 8 sector pieces (`race_stones()` in `blender/build_zoo_kit.py`, uploaded as `ZooKit_RaceStones_v1`), placed inside `RaceTrack` in the workspace and in the `ZooKit` template. Same stones, same spots.

@@ -226,12 +226,14 @@ end
 function Render.judge(design)
 	local cells = Render.decode(design.g)
 	local filled, colours, edges, used = 0, 0, 0, {}
+	local x0, y0, x1, y1 = W, H, -1, -1
 	for y = 0, H - 1 do
 		for x = 0, W - 1 do
 			local i = y * W + x + 1
 			local v = cells[i]
 			if v ~= 0 then
 				filled += 1
+				x0, y0, x1, y1 = math.min(x0, x), math.min(y0, y), math.max(x1, x), math.max(y1, y)
 				if not used[v] then used[v] = true colours += 1 end
 				-- edges between two different colours = painted detail
 				if x + 1 < W and cells[i + 1] ~= 0 and cells[i + 1] ~= v then edges += 1 end
@@ -264,12 +266,16 @@ function Render.judge(design)
 		local cx, cy = math.clamp(math.floor(e[1] * W), 0, W - 1), math.clamp(math.floor(e[2] * H), 0, H - 1)
 		eyes += cells[cy * W + cx + 1] ~= 0 and 1 or 0.5 -- an eye floating off the body counts half
 	end
+	-- an animal sits inside the canvas; a shape running into the frame on every side is a filled block, not a drawing
+	local touching = (x0 == 0 and 1 or 0) + (y0 == 0 and 1 or 0) + (x1 == W - 1 and 1 or 0) + (y1 == H - 1 and 1 or 0)
+	local frac = filled / (W * H)
 	local scores = {
-		math.min(1, filled / (W * H * 0.3)), -- size: about a third of the canvas is full marks
+		-- size: 30-50% of the canvas is full marks; more than that fades out, and a full canvas scores nothing
+		if frac <= 0.3 then frac / 0.3 elseif frac <= 0.5 then 1 else math.max(0, 1 - (frac - 0.5) / 0.4),
 		math.clamp((colours - 1) / 3, 0, 1), -- colours: 4 or more
 		math.min(1, edges / (W * 1.5) + #(design.s or {}) * 0.25), -- detail: painted patterns and stickers (edge counts grow with the grid width)
 		math.min(1, eyes / 2), -- eyes: two on the body
-		filled > 0 and (biggest / filled) ^ 2 or 0, -- neat: one solid animal
+		(filled > 0 and (biggest / filled) ^ 2 or 0) * ({ 1, 1, 0.85, 0.5, 0.2 })[touching + 1], -- neat: one solid animal, inside the frame
 	}
 	local sum = 0
 	for _, s in scores do sum += s end

@@ -350,19 +350,24 @@ local gui = new("ScreenGui", { Name = "ZooGui", ResetOnSpawn = false, DisplayOrd
 pcall(game:GetService("StarterGui").SetCoreGuiEnabled, game:GetService("StarterGui"), Enum.CoreGuiType.PlayerList, false) -- the Roblox player list sits over the DAILY button and eats its clicks; the Top Earners board replaces it
 
 -- Everything is laid out for a 1280x720 screen and scaled to fit, so phones, tablets and PCs get the same layout.
+-- touchMin: HUD pieces (side menus, cash, race chips) never shrink below this on a touch screen, so thumbs can hit them;
+-- windows don't get one, since they must fit on the screen.
 local scales = {}
-local function scaled(o)
-	table.insert(scales, new("UIScale", { Name = "Fit" }, o))
+local function scaled(o, touchMin)
+	local s = new("UIScale", { Name = "Fit" }, o)
+	if touchMin then s:SetAttribute("TouchMin", touchMin) end
+	table.insert(scales, s)
 	return o
 end
 local function rescale()
 	local vp = gui.AbsoluteSize -- the area under the top bar, not the whole camera, so tall windows never run off the bottom
-	local k = math.clamp(math.min(vp.X / 1280, vp.Y / 720), 0.35, 1.6)
-	for _, s in scales do s.Scale = k end
+	local k = math.clamp(math.min(vp.X / 1280, vp.Y / 760), 0.35, 1.6) -- 760, not 720: room for the window titles that sit above their frames
+	local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	for _, s in scales do s.Scale = math.max(k, touch and s:GetAttribute("TouchMin") or 0) end
 end
 
 local toasts = scaled(new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 4), Size = O(900, 200), BackgroundTransparency = 1, ZIndex = 40 }, gui))
-new("UIListLayout", { Padding = UDim.new(0, 4), HorizontalAlignment = Enum.HorizontalAlignment.Center }, toasts)
+local toastLayout = new("UIListLayout", { Padding = UDim.new(0, 4), HorizontalAlignment = Enum.HorizontalAlignment.Center }, toasts)
 local function toast(str, color)
 	local l = label(toasts, str, 30, { TextColor3 = color or WHITE }, true)
 	task.delay(3.5, function() l:Destroy() end)
@@ -376,6 +381,8 @@ local dim = new("Frame", { Name = "Dim", BackgroundColor3 = BLACK, BackgroundTra
 local windows, refreshers = {}, {}
 local current
 local hideWhileOpen = {} -- the side rails, so a window never sits on top of them
+local racingNow = false -- the side rails also hide during your race, so Draw or Shop can't open mid-race
+local oddsReturn -- the window Odds was opened from: closing Odds goes back to it
 local function setOpen(name, on)
 	local w = windows[name]
 	if on then
@@ -391,10 +398,11 @@ local function setOpen(name, on)
 end
 local function open(name)
 	local was = current
+	if name == "Odds" and was ~= "Odds" then oddsReturn = was end
 	if was then setOpen(was, false) end
 	current = was ~= name and name or nil
 	if current then setOpen(current, true) end
-	for _, f in hideWhileOpen do f.Visible = current == nil end
+	for _, f in hideWhileOpen do f.Visible = current == nil and not racingNow end
 	TweenService:Create(blur, TweenInfo.new(0.25), { Size = current and 14 or 0 }):Play()
 	if current then dim.Visible = true end
 	local fade = TweenService:Create(dim, TweenInfo.new(0.25), { BackgroundTransparency = current and 0.45 or 1 })
@@ -402,11 +410,16 @@ local function open(name)
 	fade:Play()
 end
 local function close(name)
+	if name == "Odds" and current == "Odds" and oddsReturn then
+		local back = oddsReturn
+		oddsReturn = nil
+		return open(back)
+	end
 	if current == name then open(name) end
 end
 local function window(name, title, iconKey, w, h, rim) -- rim: { top, middle, bottom } colours of the frame (default blue)
 	rim = rim or { hex("5CE6FF"), hex("0A86F0"), hex("0743B0") }
-	local root = scaled(new("Frame", { Name = name, AnchorPoint = CENTER, Position = S(0.5, 0.53), Size = O(w, h), BackgroundTransparency = 1, Visible = false, ZIndex = 10 }, gui))
+	local root = scaled(new("Frame", { Name = name, AnchorPoint = CENTER, Position = S(0.5, 0.515), Size = O(w, h), BackgroundTransparency = 1, Visible = false, ZIndex = 10 }, gui))
 	local stage = new("Frame", { Name = "Stage", BackgroundTransparency = 1, Size = S(1, 1) }, root)
 	local pop = new("UIScale", { Name = "Pop" }, stage) -- separate from the fit scale, so a resize mid-pop can't leave a wrong size
 	new("TextButton", { Size = S(1, 1), BackgroundTransparency = 1, Text = "" }, stage) -- swallows clicks so the camera doesn't move behind the window
@@ -443,6 +456,7 @@ end
 local state = { luckLevel = 0, capLevel = 0, capacity = Config.CAP_START, animals = {}, dailyDay = 0, dailyWait = 0, boostLeft = 0, passes = {}, freeClaimed = false }
 local stateAt = os.clock()
 local showOffline, pendingOffline, introDone
+local clearEditor -- set by FINISH DRAWING, run when the roll arrives: the canvas is only wiped once the server accepted it
 Remotes.State.OnClientEvent:Connect(function(s)
 	state, stateAt = s, os.clock()
 	if current and refreshers[current] then refreshers[current]() end
@@ -507,7 +521,7 @@ end
 local hud = new("Frame", { Name = "HUD", Size = S(1, 1), BackgroundTransparency = 1 }, gui)
 
 -- bottom left: luck, cash and income as big stroked text, no panel
-local stats = scaled(new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = U(0, 12, 1, -8), Size = O(440, 156), BackgroundTransparency = 1 }, hud))
+local stats = scaled(new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = U(0, 12, 1, -8), Size = O(440, 156), BackgroundTransparency = 1 }, hud), 0.65)
 sticker(stats, "clover", 50, O(30, 26))
 local luckLabel = label(stats, "1x", 38, { Size = O(0, 48), AutomaticSize = Enum.AutomaticSize.X, Position = O(62, 2), TextXAlignment = LEFT })
 goldText(luckLabel)
@@ -519,7 +533,7 @@ local rateLabel = label(stats, "+$0/s", 28, { Size = O(0, 36), AutomaticSize = E
 local RAIL_W, RAIL_H, RAIL_GAP = 186, 56, 12
 local RAIL_SIZE = O(RAIL_W + 8, 4 * RAIL_H + 3 * RAIL_GAP + 8)
 local function rail(anchorX, posX)
-	return scaled(new("Frame", { AnchorPoint = Vector2.new(anchorX, 0.5), Position = U(anchorX, posX, 0.46, 0), Size = RAIL_SIZE, BackgroundTransparency = 1 }, hud))
+	return scaled(new("Frame", { AnchorPoint = Vector2.new(anchorX, 0.5), Position = U(anchorX, posX, 0.46, 0), Size = RAIL_SIZE, BackgroundTransparency = 1 }, hud), 0.65)
 end
 local function railButton(bar, i, str, pal, callback, opt)
 	return button(bar, str, pal, O(RAIL_W, RAIL_H), O(RAIL_W / 2 + 4, 4 + RAIL_H / 2 + (i - 1) * (RAIL_H + RAIL_GAP)), callback, opt)
@@ -544,10 +558,31 @@ local boostBtn = railButton(rightBar, 2, "BOOST", P.purple, function() open("Boo
 tag(boostBtn, "2x", O(28, RAIL_H - 6), P.lime[3])
 -- the boost countdown sits beside its button, so it doesn't open a gap in the column
 local boostTimer = label(boostBtn, "", 22, { AnchorPoint = Vector2.new(1, 0.5), Position = U(0, -8, 0.5, 0), Size = O(110, 28), TextXAlignment = RIGHT, TextColor3 = C.yellow })
-railButton(rightBar, 3, "DRAW AN\nANIMAL", P.gold, function() open("Editor") end, { icon = "pencil", iconSize = 46, text = 20 })
+local drawBtn = railButton(rightBar, 3, "DRAW AN\nANIMAL", P.gold, function() open("Editor") end, { icon = "pencil", iconSize = 46, text = 20 })
 local starterBtn = railButton(rightBar, 4, "STARTER\nPACK", P.blue, function() open("Starter") end, { icon = "chest", iconSize = 46, text = 20 })
 live(starterBtn.Face.Row.IconSlot.Icon, "float")
 hideWhileOpen = { leftBar, rightBar }
+
+-- the rails follow the save: FREE goes once claimed, the Starter Pack once bought, and until a player has drawn their
+-- first animal the DRAW button wears a START HERE! tag and a sign floats over their own easel
+local startTag = tag(drawBtn, "START HERE!", O(RAIL_W / 2, -6), C.red)
+local easelHint = new("BillboardGui", { Name = "DrawHint", Size = U(10, 0, 2.6, 0), StudsOffset = Vector3.new(0, 7.5, 0), AlwaysOnTop = true,
+	LightInfluence = 0, MaxDistance = 300, Enabled = false }, gui)
+live(label(easelHint, "DRAW HERE!", 40, { Size = S(1, 1), TextScaled = true, TextColor3 = C.yellow }, true), "float")
+local function updateRails(s)
+	railButtons.Free.Visible = not s.freeClaimed
+	starterBtn.Visible = not s.starterBought
+	local newbie = #(s.animals or {}) == 0
+	startTag.Visible = newbie
+	local easel
+	for _, plot in World.Plots:GetChildren() do
+		if plot:GetAttribute("Owner") == player.UserId then easel = plot:FindFirstChild("Easel") end
+	end
+	easelHint.Adornee = easel
+	easelHint.Enabled = newbie and easel ~= nil
+end
+Remotes.State.OnClientEvent:Connect(updateRails)
+updateRails(state)
 
 local function upgradeReady(cash)
 	return (state.luckLevel < Config.MAX_LUCK_LEVEL and cash >= Config.luckCost(state.luckLevel))
@@ -624,7 +659,7 @@ do
 			boosted[i].Text = pctText(b[i])
 		end
 		local weather = Zoo:GetAttribute("Weather")
-		for i, p in Config.mutationChances(weather) do mrows[i].Text = pctText(p) end
+		for i, p in Config.mutationChances(weather, luck) do mrows[i].Text = pctText(p) end -- luck past 1024x lifts these too
 		weatherNote.Text = weather and (weather .. " weather is on right now") or "Weather can boost a mutation while it lasts"
 	end
 	local function live() if current == "Odds" then refreshers.Odds() end end
@@ -705,7 +740,6 @@ do
 	goldText(vt)
 	label(vip, "<font color=\"#6BFF3A\">+20%</font> money", 34, { Position = O(228, 72), Size = O(360, 44), TextXAlignment = LEFT })
 	label(vip, "From every animal in your zoo, forever!", 20, { Position = O(230, 118), Size = O(360, 28), TextXAlignment = LEFT })
-	tag(vip, "BEST!", O(cw - 40, 10))
 	priceButton(vip, "pass", "VIP", O(230, 74), O(690, 92), 34)
 	y += 200
 
@@ -716,6 +750,7 @@ do
 	label(money, "x2 Money", 36, { Position = O(170, 10), Size = O(230, 46) })
 	label(money, "Every animal earns\n<font color=\"#6BFF3A\">x2</font> money!", 20, { Position = O(170, 62), Size = O(230, 56) })
 	priceButton(money, "pass", "Money2x", O(380, 60), O(205, 168), 30)
+	tag(money, "BEST!", O(370, 10)) -- +100% money: the best value of the three passes
 
 	local _, luck = card(c, P.cyan, O(410, 214), O(426, y))
 	rays(luck, 180, O(88, 74), WHITE)
@@ -745,7 +780,7 @@ do
 	label(pack, "Starter Pack", 38, { Position = O(190, 18), Size = O(380, 48), TextXAlignment = LEFT })
 	label(pack, "$" .. Config.format(Config.STARTER_PACK.cash) .. " cash + " .. Config.STARTER_PACK.luckMin .. " min of 2x luck", 20, { Position = O(192, 74), Size = O(260, 52), TextXAlignment = LEFT, TextWrapped = true })
 	button(pack, "ODDS", P.blue, O(110, 60), O(515, 76), function() open("Odds") end, { text = 24 })
-	priceButton(pack, "product", "StarterPack", O(230, 70), O(690, 76), 32)
+	local packBtn = priceButton(pack, "product", "StarterPack", O(230, 70), O(690, 76), 32)
 	y += 176
 
 	c.Size = O(cw, y)
@@ -783,6 +818,7 @@ do
 				if state.passes[key] then setDone(b, true, "OWNED") end
 			end
 		end
+		if state.starterBought then setDone(packBtn, true, "OWNED") end -- the Starter Pack is once per player
 	end
 end
 
@@ -808,16 +844,17 @@ do
 	local pName = label(pface, "", 30, { Position = O(0, 34), Size = O(250, 40) }, true)
 	local thumb = round(new("Frame", { Position = O(15, 84), Size = O(220, 154), BackgroundColor3 = DISPLAY }, pface), 12)
 	ink(thumb, 4)
-	local pRate = label(pface, "", 26, { Position = O(0, 246), Size = O(250, 34), TextColor3 = C.cash })
+	local pRate = label(pface, "", 24, { Position = O(0, 240), Size = O(250, 30), TextColor3 = C.cash })
 	local selected
 	local equipBtn = button(pface, "EQUIP", P.lime, O(220, 60), O(125, 306), function()
 		if selected then Remotes.Equip:FireServer(selected) end
 	end, { text = 30 })
 	local releaseBtn
-	releaseBtn = button(pface, "RELEASE", P.red, O(220, 50), O(125, 366), function()
+	-- sells for the same price as Safari Sam, without the walk; a second tap confirms
+	releaseBtn = button(pface, "SELL", P.red, O(220, 50), O(125, 366), function()
 		if not selected then return end
 		if releaseBtn:GetAttribute("Sure") then
-			Remotes.Release:FireServer(selected)
+			Remotes.Sell:FireServer(selected)
 			selected = nil
 		else
 			releaseBtn:SetAttribute("Sure", true)
@@ -849,7 +886,7 @@ do
 		setLabel(equipBtn, a.eq and "UNEQUIP" or "EQUIP")
 		paint(equipBtn, a.eq and P.red or P.lime)
 		releaseBtn:SetAttribute("Sure", nil)
-		setLabel(releaseBtn, "RELEASE")
+		setLabel(releaseBtn, "SELL $" .. Config.format(Config.sellPrice(a)))
 	end
 	refreshers.Inventory = function()
 		for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
@@ -865,7 +902,11 @@ do
 		end
 		table.sort(eq, function(x, z) return Config.income(x) > Config.income(z) end)
 		if selected and not find(selected) then selected = nil end
-		if not selected and state.animals[1] then selected = state.animals[1].id end
+		if not selected then -- default: your best earner (it's listed first), not your oldest
+			local best
+			for _, a in state.animals do if not best or Config.income(a) > Config.income(best) then best = a end end
+			selected = best and best.id
+		end
 		-- one slot per possible enclosure spot: animals, open spots, then spots that need the Enclosure Size upgrade
 		for i = 1, Config.CAP_MAX do
 			local a = eq[i]
@@ -926,9 +967,10 @@ do
 	local body = window("Daily", "Daily Rewards", "calendar", 960, 560)
 	local colors = { P.cyan, P.cyan, P.cyan, P.pink, P.pink, P.gold }
 	local cards = {}
+	-- cash days pay minutes of your income (Config.dailyCash), so they keep up as your zoo grows
 	local function rewardBits(reward)
-		if reward.cash and reward.luckMin then return "giftpurple", "$" .. Config.format(reward.cash), "+ " .. reward.luckMin .. " MIN 2x LUCK" end
-		if reward.cash then return reward.cash >= 15000 and "cashbundle" or "cash", "+$" .. Config.format(reward.cash), "CASH" end
+		if reward.minutes and reward.luckMin then return "giftpurple", reward.minutes .. " MIN", "+ " .. reward.luckMin .. " MIN 2x LUCK" end
+		if reward.minutes then return reward.minutes >= 20 and "cashbundle" or "cash", reward.minutes .. " MIN", "OF INCOME" end
 		return "potion", reward.luckMin .. " MIN", "2x LUCK"
 	end
 	local CW, CH = 204, 236
@@ -953,7 +995,7 @@ do
 			rays(face, 320, O(132, 200), WHITE)
 			sticker(face, "giftpurple", 180, O(132, 200), true)
 			label(face, "MEGA GIFT", 36, { Position = O(0, 300), Size = O(264, 44) })
-			label(face, "$" .. Config.format(reward.cash or 0) .. " + " .. (reward.luckMin or 0) .. " MIN\n2x LUCK", 22, { Position = O(0, 346), Size = O(264, 56) })
+			label(face, (reward.minutes or 0) .. " MIN OF INCOME + " .. (reward.luckMin or 0) .. " MIN\n2x LUCK", 22, { Position = O(0, 346), Size = O(264, 56) })
 			cards[i] = button(face, "LOCKED", P.red, O(220, 54), O(132, 446), function() Remotes.ClaimDaily:FireServer() end, { text = 26 })
 		end
 	end
@@ -964,7 +1006,7 @@ do
 			setDone(b, false)
 			if i < today then setDone(b, true, "CLAIMED")
 			elseif i > today then paint(b, P.red) setLabel(b, "LOCKED")
-			elseif wait <= 0 then paint(b, P.lime) setLabel(b, "CLAIM!")
+			elseif wait <= 0 then paint(b, P.gold) setLabel(b, "CLAIM!") -- burning gold: CLAIMED is the pale green one
 			else paint(b, P.blue) setLabel(b, fmtTime(wait)) end
 		end
 	end
@@ -1085,7 +1127,8 @@ do
 	item(200, "cash", "$" .. Config.format(Config.STARTER_PACK.cash) .. " CASH")
 	label(face, "+", 64, { Position = O(340, 70), Size = O(100, 80) })
 	item(580, "potion", Config.STARTER_PACK.luckMin .. " MIN 2x LUCK")
-	priceButton(body, "product", "StarterPack", O(480, 90), O(390, 350), 38, "BUY BUNDLE  ")
+	local bundleBtn = priceButton(body, "product", "StarterPack", O(480, 90), O(390, 350), 38, "BUY BUNDLE  ")
+	refreshers.Starter = function() if state.starterBought then setDone(bundleBtn, true, "OWNED") end end
 end
 
 ----- Welcome back: what the zoo earned while you were away (the server already paid it) -----
@@ -1116,6 +1159,9 @@ do
 		TextSize = 26, TextColor3 = BLACK, PlaceholderColor3 = rgb(150, 150, 150), ClearTextOnFocus = false }, stage)
 	round(nameBox, 12)
 	ink(nameBox, 4)
+	nameBox:GetPropertyChangedSignal("Text"):Connect(function() -- the server keeps 20 characters
+		if utf8.len(nameBox.Text) and utf8.len(nameBox.Text) > 20 then nameBox.Text = nameBox.Text:sub(1, utf8.offset(nameBox.Text, 21) - 1) end
+	end)
 	btn(stage, "RANDOM", P.blue, O(150, 52), O(982, -27), function() nameBox.Text = Config.NAMES[math.random(#Config.NAMES)] end, { text = 26 })
 
 	local ed = { cells = table.create(N, 0), eyes = {}, stickers = {}, tab = 1, tool = "brush", size = 2, color = 3, eye = 1, sticker = 1, undo = {}, redo = {} }
@@ -1228,18 +1274,23 @@ do
 			nv = ed.color
 		end
 		if nv == target then return end
-		local stack = { start }
+		-- find the region first; filling the empty canvas from outside an outline would flood everything
+		local stack, region, seen = { start }, {}, { [start] = true }
 		while #stack > 0 do
 			local i = table.remove(stack)
-			if ed.cells[i] == target then
-				ed.cells[i] = nv
-				local x = (i - 1) % W
-				if x > 0 then table.insert(stack, i - 1) end
-				if x < W - 1 then table.insert(stack, i + 1) end
-				if i > W then table.insert(stack, i - W) end
-				if i <= N - W then table.insert(stack, i + W) end
+			table.insert(region, i)
+			local x = (i - 1) % W
+			if ed.tab == 1 and (x == 0 or x == W - 1 or i <= W or i > N - W) then
+				return toast("Close up the outline first: the fill leaked to the edge")
+			end
+			for _, j in { x > 0 and i - 1, x < W - 1 and i + 1, i > W and i - W, i <= N - W and i + W } do
+				if j and not seen[j] and ed.cells[j] == target then
+					seen[j] = true
+					table.insert(stack, j)
+				end
 			end
 		end
+		for _, i in region do ed.cells[i] = nv end
 		redraw() -- a fill can change thousands of cells: redraw as rectangles in one go
 	end
 	local function place(list, max, kind, fx, fy, word)
@@ -1307,6 +1358,7 @@ do
 	local function gridOf(parent, cell, gap)
 		new("UIGridLayout", { CellSize = O(cell, cell), CellPadding = O(gap, gap), SortOrder = Enum.SortOrder.LayoutOrder }, parent)
 	end
+	local setTab -- defined with the tabs below; picking a template jumps straight to painting it
 	local g = panel("TEMPLATES", "Pick an animal shape or draw your own.")
 	new("UIGridLayout", { CellSize = O(116, 76), CellPadding = O(8, 8), SortOrder = Enum.SortOrder.LayoutOrder }, g) -- 2 x 4 wide cards, the drawings are 80:56
 	for i, t in Config.TEMPLATES do
@@ -1315,6 +1367,7 @@ do
 			pushUndo()
 			ed.cells = table.clone(shape)
 			redraw()
+			setTab(2)
 		end, { plain = true }, i)
 		-- the button shows the template in its real colours, so you can tell which animal it is
 		local box = new("Frame", { BackgroundTransparency = 1, AnchorPoint = CENTER, Position = S(0.5, 0.5), Size = U(1, -12, 1, -12) }, b.Face)
@@ -1394,16 +1447,20 @@ do
 		local filled = 0
 		for _, v in ed.cells do if v ~= 0 then filled += 1 end end
 		if filled < Config.MIN_CELLS then return toast("Draw your animal first!") end
+		if #state.animals >= Config.MAX_INVENTORY then return toast("Your zoo is full! Sell an animal first.") end
 		Remotes.Create:FireServer({ n = nameBox.Text, g = Render.encode(ed.cells), e = ed.eyes, s = ed.stickers })
 		close("Editor")
-		nameBox.Text = ""
-		ed.undo, ed.redo = {}, {}
-		restore({ cells = table.create(N, 0), eyes = {}, stickers = {} })
+		-- the canvas is only wiped once the roll comes back: if the server says no (cooldown, full zoo) the drawing is kept
+		clearEditor = function()
+			nameBox.Text = ""
+			ed.undo, ed.redo = {}, {}
+			restore({ cells = table.create(N, 0), eyes = {}, stickers = {} })
+		end
 	end, { icon = "paw", iconSize = 56, text = 30 })
 
 	-- tabs
 	local tabButtons = {}
-	local function setTab(i)
+	function setTab(i)
 		ed.tab = i
 		pick(tabButtons, tabButtons[i])
 		for k, p in panels do p.Visible = k == i end
@@ -1434,10 +1491,13 @@ do
 	local sellAll = button(body, "SELL ALL UNEQUIPPED", P.gold, O(460, 64), O(360, 456), function() Remotes.SellAll:FireServer() end, { icon = "cashbundle", iconSize = 44, text = 26 })
 	refreshers.Sell = function()
 		for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
+		-- same rule as the server's SellAll: an unequipped animal better than your weakest equipped one is kept
+		local worst
+		for _, a in state.animals do if a.eq and (not worst or Config.income(a) < worst) then worst = Config.income(a) end end
 		local spare = 0
 		for i, a in state.animals do
 			local price = Config.sellPrice(a)
-			if not a.eq then spare += price end
+			if not a.eq and not (worst and Config.income(a) > worst) then spare += price end
 			local holder = new("Frame", { BackgroundTransparency = 1, Size = O(700, 98), LayoutOrder = (a.eq and 1000 or 0) + i }, list)
 			local _, face = card(holder, RARITY_PAL[a.r], O(696, 90), O(0, 0), 14)
 			mutationFx(Render.draw(display(face, O(110, 70), O(10, 7)), a.d, true, 3), a.m)
@@ -1447,7 +1507,7 @@ do
 				18, { Position = O(134, 46), Size = O(330, 24), TextXAlignment = LEFT })
 			local b
 			b = button(face, "SELL $" .. Config.format(price), P.lime, O(210, 58), O(580, 40), function()
-				if a.eq and not b:GetAttribute("Sure") then -- selling an animal that is earning takes a second tap
+				if (a.eq or a.r >= 4) and not b:GetAttribute("Sure") then -- an earning animal, or Epic and up, takes a second tap
 					b:SetAttribute("Sure", true)
 					setLabel(b, "SURE?")
 					return
@@ -1569,10 +1629,15 @@ do
 		hud.Visible = true
 		if not current then TweenService:Create(blur, TweenInfo.new(0.25), { Size = 0 }):Play() end
 	end, { text = 34 })
+	-- tap anywhere while it plays to skip to the result
+	local fast = false
+	layer.Dim.Activated:Connect(function() if not doneBtn.Visible then fast = true end end)
 
 	Remotes.Rolled.OnClientEvent:Connect(function(res)
 		rollId += 1
 		local id = rollId
+		fast = false
+		if clearEditor then clearEditor() clearEditor = nil end
 		local rinfo, minfo = Config.RARITIES[res.r], Config.MUTATIONS[res.m]
 		if current then close(current) end
 		layer.Visible = true
@@ -1600,8 +1665,13 @@ do
 		end)
 
 		task.spawn(function()
-			local function still(t) -- waits, and says whether this roll is still the one on screen
-				task.wait(t)
+			local function still(t) -- waits (unless skipped), and says whether this roll is still the one on screen
+				local t0 = os.clock()
+				while not fast and os.clock() - t0 < t do RunService.Heartbeat:Wait() end
+				if fast then -- skipped: the strips jump to where they stop
+					TweenService:Create(rTrack, TweenInfo.new(0), { Position = centreOn(rT) }):Play()
+					TweenService:Create(mTrack, TweenInfo.new(0), { Position = centreOn(mT) }):Play()
+				end
 				return id == rollId
 			end
 			if not still(2.45) then return end
@@ -1630,7 +1700,7 @@ do
 			if not still(0.25) then return end
 			local t0 = os.clock()
 			repeat -- count the multiplier up from x1
-				local a = math.min(1, (os.clock() - t0) / 0.7)
+				local a = fast and 1 or math.min(1, (os.clock() - t0) / 0.7)
 				incomeL.Text = "INCOME x" .. fmtX(1 + (res.mult - 1) * a * a * (3 - 2 * a))
 				RunService.RenderStepped:Wait()
 				if id ~= rollId then return end
@@ -1638,6 +1708,12 @@ do
 			breakdown.Text = string.format("%d star%s x%s  ·  %s x%s  ·  %s x%s  ·  <font color=\"#6BFF3A\">+$%s/s</font>", res.stars, res.stars == 1 and "" or "s",
 				fmtX(res.starMult), rinfo.name, fmtX(res.rarityMult), minfo.name, fmtX(res.mutMult), Config.format(res.inc))
 			doneBtn.Visible = true
+			-- say where it went: a full zoo either swapped out the weakest animal or sent this one to storage
+			if res.placed == "swapped" then
+				toast(res.name .. " joined your zoo in place of " .. (res.swapped or "your weakest animal") .. "!", C.cash)
+			elseif res.placed == "storage" then
+				toast("Your zoo is full, so " .. res.name .. " went to storage (MY ZOO)", C.yellow)
+			end
 		end)
 	end)
 end
@@ -1685,7 +1761,9 @@ local function addAnimal(part)
 			MaxDistance = 300, Adornee = part }, part)
 		Render.draw(sg, design, true, 2) -- 120 x 84 is plenty at world size
 	end
-	local tagGui = new("BillboardGui", { Size = U(9, 0, 2.2, 0), StudsOffset = Vector3.new(0, 2.8 * k + 1.4, 0), LightInfluence = 0, MaxDistance = 80, Adornee = part }, part)
+	-- the showcase animals stand close together behind Safari Sam: their names only show up close, so they don't pile up
+	local tagGui = new("BillboardGui", { Size = U(9, 0, 2.2, 0), StudsOffset = Vector3.new(0, 2.8 * k + 1.4, 0), LightInfluence = 0,
+		MaxDistance = part:IsDescendantOf(World.Showcase) and 35 or 80, Adornee = part }, part)
 	wtext(tagGui, design.n or "", { Size = S(1, 0.5) })
 	local info = Config.RARITIES[rarity]
 	local mut = Config.MUTATIONS[part:GetAttribute("Mutation") or 1]
@@ -1792,7 +1870,10 @@ do
 			end
 			show(timer, ends ~= nil and left > 0)
 			local h = topLayout.AbsoluteContentSize.Y
-			toasts.Position = U(0.5, 0, 0, h > 4 and h + 14 or 4) -- toasts drop under the banners
+			-- toasts drop under the banners; with a window open they go to the bottom, clear of its title
+			toasts.AnchorPoint = Vector2.new(0.5, current and 1 or 0)
+			toastLayout.VerticalAlignment = current and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Top
+			toasts.Position = current and U(0.5, 0, 1, -6) or U(0.5, 0, 0, h > 4 and h + 14 or 4)
 			task.wait(0.25)
 		end
 	end)
@@ -1946,7 +2027,12 @@ do
 	local function build()
 		built = true
 		local remote = Remotes:WaitForChild("Admin")
+		local nextSlot = 0 -- the server takes one call per 0.15s, so calls fired together (a lookup and the ban list) queue up here
 		local function call(action, payload)
+			local now = os.clock()
+			local slot = math.max(now, nextSlot)
+			nextSlot = slot + 0.17
+			if slot > now then task.wait(slot - now) end
 			local ok, good, msg, data = pcall(remote.InvokeServer, remote, action, payload or {})
 			if not ok then
 				toast("Admin request failed", C.red)
@@ -1983,6 +2069,24 @@ do
 			b.Outline.Color = on and WHITE or BLACK
 			b.Outline.Thickness = on and 5 or 4
 		end
+		local function confirm(parent, str, pal, size, pos, callback, opt) -- a button that asks SURE? first: the second press within 3 seconds runs it
+			local armed, b = false, nil
+			b = button(parent, str, pal, size, pos, function()
+				if not armed then
+					armed = true
+					setLabel(b, "SURE?")
+					task.delay(3, function()
+						armed = false
+						if b.Parent then setLabel(b, str) end
+					end)
+					return
+				end
+				armed = false
+				setLabel(b, str)
+				callback()
+			end, opt)
+			return b
+		end
 		local function scroller(parent, pos, size)
 			local s = new("ScrollingFrame", { Position = pos, Size = size, BackgroundTransparency = 1, ScrollBarThickness = 8, ScrollBarImageColor3 = hex("9A9A9A"),
 				TopImage = "", BottomImage = "", CanvasSize = U(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y }, parent)
@@ -2000,19 +2104,20 @@ do
 			end
 			if refresh[name] then task.spawn(refresh[name]) end
 		end
-		local TAB_LIST = { { "Players", "group" }, { "Give", "gift" }, { "Events", "cloud" }, { "Announce", "newspaper" }, { "Timer", "clock" }, { "Server", "gear" } }
+		local TAB_LIST = { { "Players", "group" }, { "Give", "gift" }, { "Events", "cloud" }, { "Announce", "newspaper" }, { "Timer", "clock" }, { "Server", "gear" }, { "Moderate", "lock" } }
 		for i, t in TAB_LIST do
-			tabs[t[1]] = button(body, t[1], SLATE, O(196, 60), O(100, 34 + (i - 1) * 72), function() show(t[1]) end,
+			tabs[t[1]] = button(body, t[1], SLATE, O(196, 60), O(100, 34 + (i - 1) * 66), function() show(t[1]) end,
 				{ icon = t[2], iconSize = 38, text = 26, name = t[1] .. "Tab" })
 			pages[t[1]] = new("Frame", { Name = t[1], Position = O(216, 0), Size = O(CW, CH), BackgroundTransparency = 1, Visible = false }, body)
 		end
-		label(body, "Only admins see this", 18, { Position = O(0, 34 + 6 * 72 - 20), Size = O(200, 24), TextColor3 = hex("9AA6C8") })
+		label(body, "Only admins see this", 18, { Position = O(0, 34 + #TAB_LIST * 66 - 14), Size = O(200, 24), TextColor3 = hex("9AA6C8") })
 		new("Frame", { Name = "Divider", BackgroundColor3 = BLACK, BackgroundTransparency = 0.5, Position = O(205, 0), Size = O(3, CH) }, body)
 
 		----- Players -----
 		local roster = {} -- last list from the server
 		local target -- userId the Give tab acts on (nil = me)
 		local renderGive -- set by the Give tab
+		local moderate -- set by the Moderate tab: moderate(userId) opens it on that player
 		do
 			local page = pages.Players
 			local count = label(page, "", 30, { Position = O(0, 0), Size = O(500, 44), TextXAlignment = LEFT })
@@ -2030,42 +2135,32 @@ do
 				local av = round(new("ImageLabel", { Size = O(62, 62), Position = O(9, 9), BackgroundColor3 = hex("3A4A72"),
 					Image = "rbxthumb://type=AvatarHeadShot&id=" .. p.userId .. "&w=150&h=150" }, f), 31)
 				ink(av, 3)
-				local name = label(f, p.displayName, 26, { Position = O(82, 6), Size = O(250, 34), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+				local name = label(f, p.displayName, 26, { Position = O(82, 6), Size = O(220, 34), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
 				if p.admin then name.TextColor3 = hex("FF8A80") end
-				label(f, "@" .. p.name, 16, { Position = O(83, 38), Size = O(250, 20), TextXAlignment = LEFT, TextColor3 = hex("B8C2E0"), TextTruncate = Enum.TextTruncate.AtEnd })
-				label(f, "$" .. Config.format(p.cash) .. "  ·  <font color=\"#6BFF3A\">+$" .. Config.format(p.rate) .. "/s</font>  ·  " .. p.animals .. " animals", 16,
-					{ Position = O(83, 56), Size = O(260, 20), TextXAlignment = LEFT, TextColor3 = C.yellow })
-				local x = 352
-				local function act(str, pal, w, cb)
-					local b = button(f, str, pal, O(w, 50), O(x + w / 2, 38), cb, { text = 20 })
+				label(f, "@" .. p.name .. "  ·  " .. p.animals .. " animals", 16, { Position = O(83, 38), Size = O(220, 20), TextXAlignment = LEFT, TextColor3 = hex("B8C2E0"), TextTruncate = Enum.TextTruncate.AtEnd })
+				label(f, "$" .. Config.format(p.cash) .. "  ·  <font color=\"#6BFF3A\">+$" .. Config.format(p.rate) .. "/s</font>", 16,
+					{ Position = O(83, 56), Size = O(225, 20), TextXAlignment = LEFT, TextColor3 = C.yellow, TextTruncate = Enum.TextTruncate.AtEnd })
+				local x = 312
+				local function act(str, pal, w, cb, sure)
+					local b = (sure and confirm or button)(f, str, pal, O(w, 50), O(x + w / 2, 38), cb, { text = 18 })
 					x += w + 8
 					return b
 				end
-				act("GIVE", P.cyan, 84, function()
+				act("GIVE", P.cyan, 74, function()
 					target = p.userId
 					show("Give")
 				end)
-				act("GO TO", P.blue, 86, function() call("player", { target = p.userId, op = "goto" }) end)
-				act("BRING", P.purple, 88, function() call("player", { target = p.userId, op = "bring" }) end)
-				local armed = false
-				local kick
-				kick = act("KICK", P.red, 78, function()
-					if not armed then -- first press arms it, the second within 3 seconds kicks
-						armed = true
-						setLabel(kick, "SURE?")
-						task.delay(3, function()
-							armed = false
-							if kick.Parent then setLabel(kick, "KICK") end
-						end)
-						return
-					end
-					if call("player", { target = p.userId, op = "kick" }) then task.delay(0.5, refresh.Players) end
-				end)
-				if p.admin then -- admins can't be kicked: a flat badge sits where KICK would be
-					kick.Visible = false
-					local badge = round(new("Frame", { AnchorPoint = CENTER, Position = O(x - 47, 38), Size = O(78, 40), BackgroundColor3 = P.red[2] }, f), 10)
+				act("GO TO", P.blue, 80, function() call("player", { target = p.userId, op = "goto" }) end)
+				act("BRING", P.purple, 82, function() call("player", { target = p.userId, op = "bring" }) end)
+				if p.admin then -- admins can't be kicked, wiped or banned: a flat badge sits where KICK and MOD would be
+					local badge = round(new("Frame", { AnchorPoint = CENTER, Position = O(x + 71, 38), Size = O(142, 40), BackgroundColor3 = P.red[2] }, f), 10)
 					ink(badge, 3)
 					label(badge, "ADMIN", 18, { Size = S(1, 1) })
+				else
+					act("KICK", P.red, 72, function()
+						if call("player", { target = p.userId, op = "kick" }) then task.delay(0.5, refresh.Players) end
+					end, true)
+					act("MOD", P.orange, 62, function() moderate(p.userId) end)
 				end
 			end
 			refresh.Players = function()
@@ -2349,6 +2444,123 @@ do
 			refresh.Server = refresh.Players
 		end
 
+		----- Moderate: wipe a save, ban / unban, for anyone by username or UserId (online or not) -----
+		do
+			local page = pages.Moderate
+			local s = scroller(page, O(0, 0), O(CW, CH))
+			local W = CW - 16
+			local c = new("Frame", { BackgroundTransparency = 1, Size = O(W, 600) }, s)
+			caption(c, "PLAYER", O(0, 16), 100)
+			local box = input(c, O(W - 270, 54), O(100, 4), "Username or UserId", "")
+			local picked -- the server's lookup of the player in the box
+			local bar = sheetPanel(c, O(W, 84), O(0, 72))
+			local av = round(new("ImageLabel", { Size = O(62, 62), Position = O(11, 11), BackgroundColor3 = hex("3A4A72") }, bar), 31)
+			ink(av, 3)
+			local who = label(bar, "", 30, { Position = O(86, 6), Size = O(W - 100, 38), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+			local status = label(bar, "Type their username or UserId, then FIND", 18, { Position = O(87, 46), Size = O(W - 100, 26), TextXAlignment = LEFT,
+				TextColor3 = C.yellow, TextTruncate = Enum.TextTruncate.AtEnd })
+
+			caption(c, "REASON", O(0, 184), 100)
+			local reason = input(c, O(W - 100, 54), O(100, 172), "Optional - the banned player sees it", "")
+			reason:GetPropertyChangedSignal("Text"):Connect(function()
+				if #reason.Text > 100 then reason.Text = reason.Text:sub(1, 100) end
+			end)
+			caption(c, "BAN FOR", O(0, 254), 100)
+			local days = 0
+			local chips = {}
+			for i, d in { { "1 DAY", 1 }, { "7 DAYS", 7 }, { "FOREVER", 0 } } do
+				chips[i] = button(c, d[1], P.blue, O(140, 48), O(170 + (i - 1) * 150, 266), function()
+					days = d[2]
+					for j, b in chips do mark(b, j == i) end
+				end, { text = 22 })
+				mark(chips[i], d[2] == days)
+			end
+
+			local lookup, loadBans
+			local function act(action, extra)
+				if not picked then return toast("Find a player first", C.red) end
+				local payload = extra or {}
+				payload.user = tostring(picked.userId)
+				if call(action, payload) then
+					task.spawn(lookup)
+					task.spawn(loadBans)
+					task.delay(0.5, refresh.Players)
+				end
+			end
+			local bw = (W - 24) / 3
+			confirm(c, "WIPE SAVE", P.orange, O(bw, 62), O(bw / 2, 352), function() act("wipe") end, { icon = "trash", iconSize = 36, text = 24 })
+			local banBtn = confirm(c, "BAN", P.red, O(bw, 62), O(W / 2, 352), function()
+				act("ban", { reason = reason.Text, days = days })
+			end, { icon = "lock", iconSize = 36, text = 24 })
+			local unbanBtn = button(c, "UNBAN", P.green, O(bw, 62), O(W / 2, 352), function() act("unban") end, { icon = "check", iconSize = 36, text = 24, vivid = true })
+			unbanBtn.Visible = false
+			button(c, "KICK", P.purple, O(bw, 62), O(W - bw / 2, 352), function()
+				if not picked then return toast("Find a player first", C.red) end
+				if not picked.here then return toast(picked.name .. " isn't in this server", C.red) end
+				act("player", { target = picked.userId, op = "kick" })
+			end, { icon = "cross", iconSize = 34, text = 24 })
+			label(c, "Wipe deletes their save (cash, animals, upgrades). Bought passes stay. Works offline too.", 16,
+				{ Position = O(0, 392), Size = O(W, 22), TextColor3 = hex("9AA6C8") })
+
+			local function show1(d) -- fill the bar with a lookup result
+				picked = d
+				who.Text = d.name
+				av.Image = "rbxthumb://type=AvatarHeadShot&id=" .. d.userId .. "&w=150&h=150"
+				local b = d.ban
+				banBtn.Visible, unbanBtn.Visible = not b, b ~= nil
+				if d.me or d.admin then
+					status.Text, status.TextColor3 = d.me and "That's you" or "Admin - can't be wiped or banned", hex("FF8A80")
+				elseif b then
+					status.Text = "BANNED " .. (b.ends == 0 and "forever" or "until " .. os.date("%b %d %H:%M", b.ends)) .. " by " .. b.by .. (b.r ~= "" and (": " .. b.r) or "")
+					status.TextColor3 = C.red
+				else
+					status.Text, status.TextColor3 = (d.here and "In this server" or "Not in this server") .. "  ·  UserId " .. d.userId, C.yellow
+				end
+			end
+			lookup = function()
+				local q = (picked and box.Text == "") and tostring(picked.userId) or box.Text
+				local ok, d = call("lookup", { user = q })
+				if ok and d then show1(d) end
+			end
+			button(c, "FIND", P.blue, O(150, 54), O(W - 75, 30), function() task.spawn(lookup) end, { text = 24 })
+			box.FocusLost:Connect(function(enter) if enter then task.spawn(lookup) end end)
+
+			-- everyone banned right now, newest first, each with its own UNBAN
+			caption(c, "BANNED PLAYERS", O(0, 432), 300)
+			local list = new("Frame", { BackgroundTransparency = 1, Position = O(0, 470), Size = O(W, 0), AutomaticSize = Enum.AutomaticSize.Y }, c)
+			new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+			loadBans = function()
+				local ok, rows = call("bans")
+				if not ok or not rows then return end
+				list:ClearAllChildren()
+				new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+				if #rows == 0 then label(list, "Nobody is banned", 20, { Size = O(W, 30), TextColor3 = hex("9AA6C8") }) end
+				for i, b in rows do
+					local f = round(new("Frame", { Size = O(W, 70), BackgroundColor3 = i % 2 == 1 and hex("2B3B70") or hex("24325F"), LayoutOrder = i }, list), 14)
+					ink(f, 3)
+					local a = round(new("ImageLabel", { Size = O(52, 52), Position = O(9, 9), BackgroundColor3 = hex("3A4A72"),
+						Image = "rbxthumb://type=AvatarHeadShot&id=" .. b.userId .. "&w=150&h=150" }, f), 26)
+					ink(a, 3)
+					label(f, b.name, 24, { Position = O(72, 8), Size = O(W - 230, 30), TextXAlignment = LEFT, TextTruncate = Enum.TextTruncate.AtEnd })
+					label(f, (b.ends == 0 and "Forever" or "Until " .. os.date("%b %d %H:%M", b.ends)) .. "  ·  by " .. b.by .. (b.reason ~= "" and ("  ·  " .. b.reason) or ""), 16,
+						{ Position = O(73, 40), Size = O(W - 230, 22), TextXAlignment = LEFT, TextColor3 = C.yellow, TextTruncate = Enum.TextTruncate.AtEnd })
+					button(f, "UNBAN", P.green, O(130, 50), O(W - 75, 35), function()
+						if call("unban", { user = tostring(b.userId) }) then
+							task.spawn(loadBans)
+							if picked and picked.userId == b.userId then task.spawn(lookup) end
+						end
+					end, { text = 20, vivid = true })
+				end
+				c.Size = O(W, 480 + #rows * 78 + 40)
+			end
+			refresh.Moderate = loadBans
+			moderate = function(userId)
+				box.Text = tostring(userId)
+				show("Moderate")
+				task.spawn(lookup)
+			end
+		end
+
 		refreshers.Admin = function() show(active or "Players") end
 	end
 
@@ -2608,7 +2820,7 @@ do
 
 	-- race HUD: three chips at the top in the side-rail style (place, time left, lap), a RESET button under them, warnings
 	-- under that, and big pop-up words in the middle (countdown, GO!, BOOST!, your place)
-	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(582, 56), BackgroundTransparency = 1, Visible = false }, gui))
+	local hudR = scaled(new("Frame", { Name = "RaceHud", AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 70), Size = O(582, 56), BackgroundTransparency = 1, Visible = false }, gui), 0.65)
 	local function chip(i, pal, icon)
 		local _, face = card(hudR, pal, O(186, 56), O((i - 1) * 198, 0))
 		sticker(face, icon, 40, O(30, 25))
@@ -2643,6 +2855,8 @@ do
 		race = s
 		local racing = mine(s.racers)
 		hudR.Visible = racing and s.phase == "racing"
+		racingNow = racing
+		for _, f in hideWhileOpen do f.Visible = current == nil and not racing end
 		if racing and current == "Race" then close("Race") end
 		if racing and s.phase == "racing" and before == "countdown" and shown ~= 0 then pop("GO!", C.cash) end
 		if not racing then shown, lastLap = nil, nil end
@@ -2738,6 +2952,18 @@ do
 			Render.draw(sg, design, true, 2)
 		end
 		cutoutFx(part)
+		-- your own ride: the cutout runs side-on, so from the chase camera it is a sliver. Show it to the driver as a
+		-- billboard that always faces the camera instead (everyone else still sees the side-on cutout).
+		if part.Parent and part.Parent:GetAttribute("Owner") == player.UserId then
+			for _, sg in part:GetChildren() do if sg:IsA("SurfaceGui") then sg.Enabled = false end end
+			local bb = new("BillboardGui", { Name = "DriverView", Size = U(part.Size.X, 0, part.Size.Y, 0), LightInfluence = 0.25, MaxDistance = 300,
+				ClipsDescendants = false, Adornee = part }, part)
+			local d = Render.draw(bb, design, true, 2)
+			local mut = Config.MUTATIONS[part:GetAttribute("Mutation") or 1]
+			local look = mut and MUT_LOOK[mut.name]
+			if look and look.rain then d.Size = S(0.8, 0.8) end
+			mutationFx(d, part:GetAttribute("Mutation"))
+		end
 		local weld = part:WaitForChild("MountWeld", 5)
 		if weld and mounts[part] then mounts[part].weld, mounts[part].base = weld, weld.C0 end
 	end

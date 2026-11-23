@@ -47,9 +47,10 @@ Config.WEATHERS = {
 	{ name = "Matrix", mutation = "Matrix", chance = 0.1, weight = 1, duration = { 120, 180 }, icon = "cloud", color = rgb(60, 255, 110),
 		rain = "0123456789ABCDEFXZ$#%&*+=<>",
 		look = {
-			Lighting = { ClockTime = 21, Brightness = 1.5, Ambient = rgb(40, 100, 60), OutdoorAmbient = rgb(60, 150, 90) },
-			Atmosphere = { Density = 0.36, Color = rgb(30, 140, 70), Decay = rgb(0, 40, 15), Haze = 1.2, Glare = 0 },
-			CartoonGrade = { TintColor = rgb(170, 255, 190), Saturation = 0.1, Contrast = 0.2 },
+			-- a light green wash, not a dark night: players still need to see the park
+			Lighting = { ClockTime = 17.5, Brightness = 2.2, Ambient = rgb(90, 140, 100), OutdoorAmbient = rgb(120, 175, 130) },
+			Atmosphere = { Density = 0.22, Color = rgb(150, 220, 170), Decay = rgb(60, 130, 80), Haze = 0.6, Glare = 0 },
+			CartoonGrade = { TintColor = rgb(215, 255, 222), Saturation = 0.05, Contrast = 0.1 },
 		},
 	},
 }
@@ -68,13 +69,22 @@ function Config.weather(name: string?): any
 	return nil
 end
 
--- Chance of each mutation while `weather` is on (nil = clear skies). Used by the server roll, so the odds live in one place.
-function Config.mutationChances(weather: string?): { number }
+-- Luck past the point where Mythic is certain (1024x) raises the mutation odds instead, so luck items still pay off
+-- for a maxed player: x1.5 at 2048x, x2 at 4096x, x2.5 at 8192x.
+function Config.mutationBoost(luck: number?): number
+	local over = (luck or 1) / Config.RARITIES[#Config.RARITIES].oneIn
+	return if over > 1 then 1 + 0.5 * math.log(over, 2) else 1
+end
+
+-- Chance of each mutation while `weather` is on (nil = clear skies) at `luck`. Used by the server roll AND the odds
+-- screen, so the odds live in one place.
+function Config.mutationChances(weather: string?, luck: number?): { number }
 	local w = Config.weather(weather)
+	local boost = Config.mutationBoost(luck)
 	local out, rest = table.create(#Config.MUTATIONS, 0), 1
 	for i = 2, #Config.MUTATIONS do
 		local m = Config.MUTATIONS[i]
-		out[i] = if w and w.mutation == m.name then w.chance else m.chance
+		out[i] = if w and w.mutation == m.name then w.chance else m.chance * boost
 		rest -= out[i]
 	end
 	out[1] = rest
@@ -109,15 +119,19 @@ Config.CREATE_COOLDOWN = 5
 Config.DAILY_COOLDOWN = 20 * 3600
 Config.DAILY_RESET = 48 * 3600
 
+-- cash days pay `minutes` of the player's current income, or `cash` if that is more (so a new zoo still gets something)
 Config.DAILY = {
-	{ cash = 500 }, { cash = 1500 }, { luckMin = 5 }, { cash = 5000 },
-	{ cash = 15000 }, { luckMin = 15 }, { cash = 50000, luckMin = 30 },
+	{ cash = 500, minutes = 2 }, { cash = 1500, minutes = 5 }, { luckMin = 5 }, { cash = 5000, minutes = 10 },
+	{ cash = 15000, minutes = 20 }, { luckMin = 15 }, { cash = 50000, minutes = 60, luckMin = 30 },
 }
+function Config.dailyCash(reward: any, rate: number): number
+	return math.floor(math.max(reward.cash or 0, rate * 60 * (reward.minutes or 0)))
+end
 
 -- Game pass and developer product ids (created 2026-11-19, docs/ASSETS.md). 0 = not for sale yet ("Coming soon").
 Config.PASSES = { VIP = 2096448686, Money2x = 2094550605, Luck2x = 2093692759 }
 Config.PRODUCTS = { LuckBoost = 3733847302, StarterPack = 3733847308, OfflineDouble = 3733847314 }
-Config.GROUP_ID = 0 -- your Roblox group id: the Free Reward then also asks players to join it
+Config.GROUP_ID = 229775176 -- the group that owns the game: the Free Reward also asks players to join it (0 = don't ask)
 Config.FREE_LUCK_MINUTES = 30 -- one-time Free Reward
 Config.OFFLINE_HOURS = 3 -- most hours of income paid for time away
 
