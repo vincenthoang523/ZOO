@@ -22,7 +22,8 @@ local sessions = {} -- [Player] = { data, loaded, plot, passes, lastCreate, last
 local rng = Random.new()
 
 local function newData()
-	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, moneyUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false, passGrants = {}, starterBought = false }
+	return { cash = 0, luckLevel = 0, capLevel = 0, animals = {}, dailyDay = 0, dailyAt = 0, boostUntil = 0, moneyUntil = 0, lastSeen = 0, freeClaimed = false, introDone = false, passGrants = {}, starterBought = false,
+		sound = { music = true, sfx = true } }
 end
 
 ----- maths -----
@@ -72,6 +73,7 @@ local function sync(player, full)
 			starterBought = s.data.starterBought == true,
 			boostLeft = math.max(0, s.data.boostUntil - os.time()), moneyLeft = math.max(0, s.data.moneyUntil - os.time()), passes = s.passes, freeClaimed = s.data.freeClaimed,
 			offline = s.offlineNotice, -- sent once, for the Welcome Back popup
+			sound = s.data.sound,
 		})
 		s.offlineNotice = nil
 	end
@@ -101,7 +103,7 @@ local function refreshPlot(player)
 	for _, a in s.data.animals do if a.eq then want[a.id] = a end end
 	for _, p in s.plot.Animals:GetChildren() do
 		local id = p:GetAttribute("Id")
-		if id and want[id] then want[id] = nil else p:Destroy() end
+		if id and want[id] and p:GetAttribute("Mutation") == want[id].m then want[id] = nil else p:Destroy() end -- a worn-off mutation respawns it
 	end
 	for id, a in want do spawnAnimal(s.plot.Animals, a.d, a.r, a.m, Config.income(a), id) end
 	s.plot.Arch.OwnerGui.Rate.Text = "$" .. Config.format(rate(s)) .. "/s"
@@ -121,6 +123,30 @@ end
 
 local function notify(player, text, color)
 	Remotes.Notify:FireClient(player, text, color)
+end
+
+----- weather mutations wear off (Config.MUTATION_TIME) -----
+-- a.me = the os.time() its weather mutation ends
+local function stampMutation(a)
+	if Config.MUTATIONS[a.m or 1].weather and not a.me then a.me = os.time() + rng:NextInteger(Config.MUTATION_TIME[1], Config.MUTATION_TIME[2]) end
+end
+-- reverts every worn-off weather mutation (also those that ran out while offline); true if anything changed
+local function wearOff(player, s)
+	local any, now = false, os.time()
+	for _, a in s.data.animals do
+		local m = Config.MUTATIONS[a.m or 1]
+		if m.weather and not a.me and m.name == "Matrix" then
+			-- a Matrix animal from before Matrix dropped from x8 to x2.5: rescale it once, then it gets its timer like any other
+			if a.inc then a.inc = math.max(1, math.floor(a.inc / Config.MATRIX_OLD_MULT * m.mult)) end
+			stampMutation(a)
+			any = true
+		elseif m.weather and a.me and a.me <= now then
+			if a.inc then a.inc = math.max(1, math.floor(a.inc / m.mult)) end
+			a.m, a.me, any = 1, nil, true
+			notify(player, string.format("%s's %s wore off", a.d.n or "An animal", m.name), m.color)
+		end
+	end
+	return any
 end
 
 ----- plots -----
@@ -207,6 +233,7 @@ local function onJoin(player)
 	s.plot = claimPlot(player)
 	sessions[player] = s
 	if not s.loaded then notify(player, "Couldn't load your save - progress won't be saved this session.", Color3.fromRGB(255, 90, 90)) end
+	wearOff(player, s)
 	player.CharacterAdded:Connect(function(c) toPlot(player, c) end)
 	if player.Character then toPlot(player, player.Character) end
 	changed(player)
@@ -232,6 +259,11 @@ local function on(name, handler)
 		handler(player, s, ...)
 	end)
 end
+
+on("Settings", function(player, s, music, sfx) -- the HUD's music and sound toggles
+	if typeof(music) ~= "boolean" or typeof(sfx) ~= "boolean" then return end
+	s.data.sound = { music = music, sfx = sfx }
+end)
 
 on("IntroDone", function(player, s)
 	s.data.introDone = true
@@ -321,6 +353,7 @@ on("Create", function(player, s, raw)
 	local mult = starMult * rarityMult * mutMult
 	local income = math.floor(Config.BASE_RATE * mult)
 	local animal = { id = HttpService:GenerateGUID(false), d = design, r = rarity, m = mutation, st = stars, inc = income, eq = equippedCount(s) < capacity(s) }
+	stampMutation(animal)
 	-- a full zoo: a better animal takes the place of the weakest one, so a good roll never hides in storage
 	local placed, swapped = animal.eq and "zoo" or "storage", nil
 	if not animal.eq then
@@ -335,7 +368,7 @@ on("Create", function(player, s, raw)
 	table.insert(s.data.animals, animal)
 	Remotes.Rolled:FireClient(player, {
 		name = name, d = design, r = rarity, m = mutation, rChance = chances[rarity], mChance = mChances[mutation],
-		scores = scores, stars = stars, starMult = starMult, rarityMult = rarityMult, mutMult = mutMult, mult = mult, inc = income,
+		scores = scores, stars = stars, starMult = starMult, rarityMult = rarityMult, mutMult = mutMult, mult = mult, inc = income, me = animal.me,
 		placed = placed, swapped = swapped,
 	})
 	changed(player)
@@ -514,6 +547,7 @@ function Api.addAnimal(player, animal)
 	local s = sessions[player]
 	if not s or #s.data.animals >= Config.MAX_INVENTORY then return false end
 	animal.eq = equippedCount(s) < capacity(s)
+	stampMutation(animal)
 	table.insert(s.data.animals, animal)
 	changed(player)
 	return true
@@ -555,6 +589,9 @@ task.spawn(function() -- income + leaderboard, once a second
 		if World.Showcase.Board:GetAttribute("Top") ~= json then World.Showcase.Board:SetAttribute("Top", json) end
 		if tick % 120 == 0 then
 			for player in sessions do task.spawn(save, player) end
+		end
+		if tick % 15 == 0 then
+			for player, s in sessions do if wearOff(player, s) then changed(player) end end
 		end
 	end
 end)

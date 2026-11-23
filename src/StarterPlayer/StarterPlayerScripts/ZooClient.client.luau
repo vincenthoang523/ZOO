@@ -21,6 +21,7 @@ local player = Players.LocalPlayer
 local Zoo = ReplicatedStorage:WaitForChild("Zoo")
 local Config = require(Zoo:WaitForChild("Config"))
 local Render = require(Zoo:WaitForChild("Render"))
+local Sfx = require(Zoo:WaitForChild("Sfx"))
 local Remotes = Zoo:WaitForChild("Remotes")
 local World = workspace:WaitForChild("Zoo")
 
@@ -47,11 +48,13 @@ local P = {
 }
 local C = { yellow = hex("FFE600"), cash = hex("6BFF3A"), red = hex("FF1F2A"), line = hex("D6D6D6"), canvas = rgb(44, 58, 88) } -- dark canvas: the grey base colour and pale paints stand out on it
 local RARITY_PAL = { P.cyan, P.lime, P.blue, P.purple, P.gold, P.red } -- Common .. Mythic
-local MUT_PAL = { -- Normal, Gold, Diamond, Rainbow, Matrix (Config.MUTATIONS order)
+local MUT_PAL = { -- Config.MUTATIONS order: Normal, Gold, Diamond, Rainbow, Matrix, Soaked, Frozen, Misty, Electric, Cosmic
 	{ hex("EEF2F8"), hex("9AA4B5"), hex("5C6575") }, P.gold, { hex("C9FDFF"), hex("2EC4FF"), hex("1677B3") },
 	ColorSequence.new({ ColorSequenceKeypoint.new(0, hex("FF2B2B")), ColorSequenceKeypoint.new(0.2, hex("FF9A00")), ColorSequenceKeypoint.new(0.4, hex("FFE600")),
 		ColorSequenceKeypoint.new(0.6, hex("2BE000")), ColorSequenceKeypoint.new(0.8, hex("00BFFF")), ColorSequenceKeypoint.new(1, hex("CC00FF")) }),
 	{ hex("8CFFAE"), hex("00C853"), hex("006B2B") },
+	{ hex("9FD4FF"), hex("2E8BFF"), hex("1450B8") }, { hex("E8FBFF"), hex("8FE3FF"), hex("3A9CC4") }, { hex("F2F0FA"), hex("B9B3CC"), hex("6E6884") },
+	{ hex("FFF68A"), hex("FFD000"), hex("B88A00") }, { hex("C9A8FF"), hex("7A3CFF"), hex("3E1499") },
 }
 local STUD = "rbxassetid://3014551673" -- 2 x 2 studs per tile
 local ICON = Config.ICONS or {}
@@ -116,12 +119,18 @@ end)
 -- colour from Lua, a few times a second, one write per rim rectangle.
 local RAINBOW = MUT_PAL[4]
 local rainbowRims = {} -- [drawing] = { { rim frame, hue offset } }
-local matrixBits = {} -- [drawing] = { digit labels }, one flips 0/1 per tick
+local matrixBits = {} -- [drawing] = { bits = ring labels, chars = what they flip between }, one flips per tick
 local MUT_LOOK = { -- by mutation name; Normal has none. glow = the world light and particles
 	Gold = { tint = hex("FFE39A"), rim = hex("FF9F0A"), shine = true, sparkle = hex("FFF6C2"), glow = hex("FFD84A") },
 	Diamond = { tint = hex("D4F4FF"), rim = hex("5CD8FF"), shine = true, sparkle = WHITE, glow = hex("9EEBFF") },
 	Rainbow = { spin = true, sparkle = WHITE, glow = hex("FF7AE6") },
-	Matrix = { tint = hex("7DFF9E"), rim = hex("2BE36A"), rain = true, glow = hex("3CFF6E") },
+	Matrix = { tint = hex("7DFF9E"), rim = hex("2BE36A"), ring = { "0", "1" }, glow = hex("3CFF6E") },
+	-- weather mutations. ring = small characters floating round it; drips = drops sliding off; ghost = see-through pixels
+	Soaked = { tint = hex("C4E2FF"), rim = hex("2E8BFF"), drips = hex("8CC8FF"), glow = hex("6FB6FF") },
+	Frozen = { tint = hex("E4F8FF"), rim = hex("8FE3FF"), sparkle = WHITE, glow = hex("BFF3FF") },
+	Misty = { tint = hex("ECE8F6"), rim = hex("B9B3CC"), ghost = 0.35, glow = hex("D8D2EE") },
+	Electric = { tint = hex("FFF6C0"), rim = hex("FFD000"), sparkle = hex("FFF27A"), flicker = true, glow = hex("FFE640") },
+	Cosmic = { tint = hex("CDB8FF"), rim = hex("7A3CFF"), ring = { "★", "✦", "·" }, glow = hex("A77BFF") },
 }
 local function mutationFx(drawing, m)
 	local mut = Config.MUTATIONS[m or 1]
@@ -143,6 +152,7 @@ local function mutationFx(drawing, m)
 		elseif o.ClassName == "Frame" and o.ZIndex == 2 and t then
 			local c = o.BackgroundColor3
 			o.BackgroundColor3 = Color3.new(c.R * t.R, c.G * t.G, c.B * t.B)
+			if look.ghost then o.BackgroundTransparency = look.ghost end
 		end
 	end
 	if look.spin and not reduced then rainbowRims[drawing] = rims end
@@ -151,22 +161,32 @@ local function mutationFx(drawing, m)
 			local sp = new("Frame", { Name = "Sparkle", AnchorPoint = Vector2.new(0.5, 0.5), Rotation = 45, BackgroundColor3 = look.sparkle, ZIndex = 20,
 				Position = S(0.12 + math.random() * 0.76, 0.12 + math.random() * 0.76), Size = reduced and S(0.04, 0.04) or S(0, 0) }, drawing)
 			new("UIAspectRatioConstraint", {}, sp)
-			loop(sp, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, -1, true, 0.6 + math.random() * 1.8), { Size = S(0.11, 0.11) })
+			-- flicker: quick crackling sparks (Electric) instead of slow glints
+			loop(sp, TweenInfo.new(look.flicker and 0.1 or 0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, -1, true, look.flicker and 0.2 + math.random() * 0.8 or 0.6 + math.random() * 1.8), { Size = S(0.11, 0.11) })
 		end
 	end
-	if look.rain then -- small 1s and 0s hovering in a loose ring round the animal, bobbing, blinking and flipping
+	if look.ring then -- small characters (Matrix 1s and 0s, Cosmic stars) hovering in a loose ring round the animal, bobbing, blinking and flipping
 		local bits = {}
 		for i = 1, 18 do
 			local ang = (i - 1) / 18 * math.pi * 2 + math.random() * 0.3
 			local r = 0.5 + math.random() * 0.05 -- just outside the drawing's box: the corners are empty, so the ring hugs the animal
 			local x, y = 0.5 + math.cos(ang) * r, 0.5 + math.sin(ang) * r * 0.92
-			local l = new("TextLabel", { Name = "Bit", BackgroundTransparency = 1, Font = Enum.Font.Code, TextScaled = true, Text = tostring(math.random(0, 1)),
+			local l = new("TextLabel", { Name = "Bit", BackgroundTransparency = 1, Font = Enum.Font.Code, TextScaled = true, Text = look.ring[math.random(#look.ring)],
 				TextColor3 = look.glow, TextTransparency = if reduced then 0.3 else 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = S(x, y), Size = S(0.06, 0.085), ZIndex = 0 }, drawing)
 			loop(l, TweenInfo.new(1.2 + math.random() * 1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true, math.random() * 1.5), { Position = S(x, y - 0.035) })
 			loop(l, TweenInfo.new(0.8 + math.random(), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true, math.random() * 2), { TextTransparency = 0.15 })
 			table.insert(bits, l)
 		end
-		if not reduced then matrixBits[drawing] = bits end
+		if not reduced then matrixBits[drawing] = { bits = bits, chars = look.ring } end
+	end
+	if look.drips then -- drops sliding off the bottom of the animal
+		for i = 1, 4 do
+			local x = 0.2 + (i - 1) * 0.2 + math.random() * 0.08
+			local d = new("Frame", { Name = "Drip", AnchorPoint = Vector2.new(0.5, 0), BackgroundColor3 = look.drips, Position = S(x, 0.74), Size = S(0.025, 0.05), ZIndex = 20,
+				BackgroundTransparency = reduced and 0.2 or 0 }, drawing)
+			new("UICorner", { CornerRadius = UDim.new(1, 0) }, d)
+			loop(d, TweenInfo.new(1 + math.random() * 0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In, -1, false, math.random() * 1.5), { Position = S(x, 1.02), BackgroundTransparency = 1 })
+		end
 	end
 	if #tweens > 0 then drawing.Destroying:Once(function() for _, tw in tweens do tw:Cancel() end end) end
 	return drawing
@@ -181,10 +201,9 @@ RunService.Heartbeat:Connect(function(dt)
 		if not d.Parent then rainbowRims[d] = nil continue end
 		for _, r in rims do r[1].BackgroundColor3 = Color3.fromHSV((t + r[2]) % 1, 0.75, 1) end
 	end
-	for d, bits in matrixBits do
+	for d, r in matrixBits do
 		if not d.Parent then matrixBits[d] = nil continue end
-		local l = bits[math.random(#bits)]
-		l.Text = if l.Text == "0" then "1" else "0"
+		r.bits[math.random(#r.bits)].Text = r.chars[math.random(#r.chars)]
 	end
 end)
 
@@ -293,6 +312,7 @@ local function button(parent, str, pal, size, pos, callback, opt)
 	end)
 	b.MouseButton1Down:Connect(function() TweenService:Create(pop, QUICK, { Scale = 0.94 }):Play() end)
 	b.MouseButton1Up:Connect(function() TweenService:Create(pop, BACK, { Scale = 1.06 }):Play() end)
+	b.Activated:Connect(function() Sfx.play("click") end)
 	if callback then b.Activated:Connect(callback) end
 	return b
 end
@@ -378,11 +398,16 @@ end
 
 local toasts = scaled(new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 4), Size = O(900, 200), BackgroundTransparency = 1, ZIndex = 40 }, gui))
 local toastLayout = new("UIListLayout", { Padding = UDim.new(0, 4), HorizontalAlignment = Enum.HorizontalAlignment.Center }, toasts)
-local function toast(str, color)
+-- sound: a Sfx name; by default a note with no colour (or red) is a "no" and gets the error sound, anything else a soft pop
+local function toast(str, color, sound)
 	local l = label(toasts, str, 30, { TextColor3 = color or WHITE }, true)
+	Sfx.play(sound or ((color == nil or color == C.red) and "error" or "toast"))
 	task.delay(3.5, function() l:Destroy() end)
 end
-Remotes.Notify.OnClientEvent:Connect(toast)
+Remotes.Notify.OnClientEvent:Connect(function(text, color)
+	-- shortcut: matches ZooServer's wording for its happy notes; a new kind of note just gets the plain pop
+	toast(text, color, if text:find("^Sold") then "sell" elseif text == "Upgraded!" then "upgrade" elseif text:find("claimed!$") then "reward" else nil)
+end)
 
 ----- windows: a white studded sheet, title letters centred on the top border, icon over the corner, X overhanging -----
 local blur = Lighting:FindFirstChild("ZooBlur") or new("BlurEffect", { Name = "ZooBlur", Size = 0 }, Lighting)
@@ -398,10 +423,12 @@ local function setOpen(name, on)
 	if on then
 		-- fill it before the pop starts: a slow refresh after Play ate the start of the tween, so the window jumped
 		if refreshers[name] then refreshers[name]() end
+		Sfx.play("open")
 		w.root.Visible = true
 		w.pop.Scale = 0.8
 		TweenService:Create(w.pop, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 	else
+		Sfx.play("close")
 		local tw = TweenService:Create(w.pop, TweenInfo.new(0.13, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0.8 })
 		tw.Completed:Once(function() if current ~= name then w.root.Visible = false end end) -- reopening during the close wins
 		tw:Play()
@@ -509,6 +536,9 @@ local function buy(kind, key)
 	end
 	if kind == "pass" then MarketplaceService:PromptGamePassPurchase(player, id) else MarketplaceService:PromptProductPurchase(player, id) end
 end
+-- a finished Robux purchase rings the till (the server grants it; this is only the sound)
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(p, _, bought) if p == player and bought then Sfx.play("buy") end end)
+MarketplaceService.PromptProductPurchaseFinished:Connect(function(uid, _, bought) if uid == player.UserId and bought then Sfx.play("buy") end end)
 local passButtons = {}
 local function priceButton(parent, kind, key, size, pos, ts, prefix)
 	local b
@@ -604,6 +634,35 @@ end
 Remotes.State.OnClientEvent:Connect(updateRails)
 updateRails(state)
 
+-- music and sound toggles over the cash; saved with the player's data (Remotes.Settings)
+local soundOn, soundLoaded = { music = true, sfx = true }, false
+local soundBtns = {}
+local SOUND_OFF = { hex("C9CED8"), hex("8A92A3"), hex("5C6575") }
+local function paintSound()
+	for kind, b in soundBtns do
+		paint(b, soundOn[kind] and P.calm or SOUND_OFF)
+		setLabel(b, (kind == "music" and "MUSIC " or "SOUND ") .. (soundOn[kind] and "ON" or "OFF"))
+		Sfx.setEnabled(kind, soundOn[kind])
+	end
+end
+for i, kind in { "music", "sfx" } do
+	soundBtns[kind] = button(stats, "", P.calm, O(124, 40), O(72 + (i - 1) * 134, -26), function()
+		soundOn[kind] = not soundOn[kind]
+		paintSound()
+		Remotes.Settings:FireServer(soundOn.music, soundOn.sfx)
+	end, { text = 18, plain = true })
+end
+local function applySound(s)
+	if soundLoaded or not s.sound then return end
+	soundLoaded = true
+	soundOn.music, soundOn.sfx = s.sound.music ~= false, s.sound.sfx ~= false
+	paintSound()
+	Sfx.startMusic()
+end
+paintSound()
+Remotes.State.OnClientEvent:Connect(applySound)
+applySound(state)
+
 local function upgradeReady(cash)
 	return (state.luckLevel < Config.MAX_LUCK_LEVEL and cash >= Config.luckCost(state.luckLevel))
 		or (state.capacity < Config.CAP_MAX and cash >= Config.capCost(state.capLevel))
@@ -661,13 +720,15 @@ do
 		label(face, "$" .. Config.format(info.rate) .. "/s", 20, { Position = O(390, 0), Size = U(0, 96, 1, 0), TextXAlignment = RIGHT, TextColor3 = C.cash })
 		f.Name = info.name
 	end
+	local mcards = {}
 	for i, m in Config.MUTATIONS do
-		local f, face = card(body, MUT_PAL[i], O(244, 56), O(516, 72 + (i - 1) * 64), 12)
+		local f, face, sh = card(body, MUT_PAL[i], O(244, 56), O(516, 72 + (i - 1) * 64), 12)
+		mcards[i] = { f, sh, sh.Position - f.Position }
 		label(face, m.name:upper() .. " x" .. m.mult, 20, { Position = O(12, 0), Size = U(0, 130, 1, 0), TextXAlignment = LEFT })
 		mrows[i] = label(face, "", 22, { Position = O(130, 0), Size = U(0, 104, 1, 0), TextColor3 = C.yellow })
 		f.Name = m.name
 	end
-	local weatherNote = label(body, "", 18, { Position = O(516, 72 + #Config.MUTATIONS * 64), Size = O(244, 48), TextWrapped = true })
+	local weatherNote = label(body, "", 18, { Position = O(516, 72), Size = O(244, 48), TextWrapped = true })
 	label(body, "Every drawing rolls a rarity and a mutation separately. Probabilities are rounded; total of displayed individual probabilities may not equal 100%.", 16,
 		{ Position = O(0, 470), Size = O(760, 48), TextWrapped = true })
 	refreshers.Odds = function()
@@ -679,8 +740,19 @@ do
 			boosted[i].Text = pctText(b[i])
 		end
 		local weather = Zoo:GetAttribute("Weather")
-		for i, p in Config.mutationChances(weather, luck) do mrows[i].Text = pctText(p) end -- luck past 1024x lifts these too
-		weatherNote.Text = weather and (weather .. " weather is on right now") or "Weather can boost a mutation while it lasts"
+		-- weather mutations only roll in their own weather, so only the live one gets a row; the rest are 0%
+		local y = 72
+		for i, p in Config.mutationChances(weather, luck) do -- luck past 1024x lifts these too
+			mrows[i].Text = pctText(p)
+			local c, show = mcards[i], not Config.MUTATIONS[i].weather or p > 0
+			c[1].Visible, c[2].Visible = show, show
+			if show then
+				c[1].Position, c[2].Position = O(516, y), O(516, y) + c[3]
+				y += 64
+			end
+		end
+		weatherNote.Position = O(516, y)
+		weatherNote.Text = weather and (weather .. " weather is on! Its mutation lasts 30m to 3h") or "Weather brings its own mutation while it lasts"
 	end
 	local function live() if current == "Odds" then refreshers.Odds() end end
 	player:GetAttributeChangedSignal("Luck"):Connect(live)
@@ -898,7 +970,7 @@ do
 		local m = Config.MUTATIONS[a.m or 1]
 		pRarity.Text = (a.m or 1) > 1 and string.format('<font color="#%s">%s</font> %s', m.color:ToHex(), m.name:upper(), r.name:upper()) or r.name:upper()
 		pName.Text = a.d.n
-		pRate.Text = "+$" .. Config.format(Config.income(a)) .. "/s"
+		pRate.Text = "+$" .. Config.format(Config.income(a)) .. "/s" .. (a.me and string.format('  <font size="18" color="#%s">%s left</font>', m.color:ToHex(), fmtTime(a.me - os.time())) or "")
 		thumb:ClearAllChildren()
 		round(thumb, 12)
 		ink(thumb, 4)
@@ -1344,12 +1416,13 @@ do
 		if not isPress(input) then return end
 		local cx, cy, fx, fy = cellAt(input)
 		pushUndo()
-		if ed.tab == 3 then place(ed.eyes, Config.MAX_EYES, ed.eye, fx, fy, "eyes")
-		elseif ed.tab == 4 then place(ed.stickers, Config.MAX_STICKERS, ed.sticker, fx, fy, "stickers")
-		elseif ed.tool == "fill" then fill(cx, cy)
+		if ed.tab == 3 then place(ed.eyes, Config.MAX_EYES, ed.eye, fx, fy, "eyes") Sfx.play("land")
+		elseif ed.tab == 4 then place(ed.stickers, Config.MAX_STICKERS, ed.sticker, fx, fy, "stickers") Sfx.play("land")
+		elseif ed.tool == "fill" then fill(cx, cy) Sfx.play("brush", { pitch = 0.8, vol = 1.5 })
 		else
 			drawing, last = true, { cx, cy }
 			stamp(cx, cy)
+			Sfx.play("brush", { pitch = 1.25 - ed.size * 0.1 }) -- bigger brush, lower stroke
 		end
 	end)
 	pad.InputChanged:Connect(function(input)
@@ -1361,6 +1434,7 @@ do
 		for t = 1, steps do
 			stamp(math.round(last[1] + (cx - last[1]) * t / steps), math.round(last[2] + (cy - last[2]) * t / steps))
 		end
+		if reach > 0 then Sfx.play("brush", { pitch = 1.25 - ed.size * 0.1 }) end -- its cooldown keeps a long stroke to a soft scratch
 		last = { cx, cy }
 		if liveCount > 3000 then redraw() end -- a long XL stroke: fold it into rectangles before the frame count gets heavy
 	end)
@@ -1476,6 +1550,7 @@ do
 		if filled < Config.MIN_CELLS then return toast("Draw your animal first!") end
 		if #state.animals >= Config.MAX_INVENTORY then return toast("Your zoo is full! Sell an animal first.") end
 		Remotes.Create:FireServer({ n = nameBox.Text, g = Render.encode(ed.cells), e = ed.eyes, s = ed.stickers })
+		Sfx.play("finish")
 		close("Editor")
 		-- the canvas is only wiped once the roll comes back: if the server says no (cooldown, full zoo) the drawing is kept
 		clearEditor = function()
@@ -1656,6 +1731,7 @@ do
 	local rollId = 0
 	local doneBtn = button(stage, "AWESOME!", P.lime, O(270, 72), O(226, 650), function()
 		rollId += 1
+		Sfx.duck(false)
 		layer.Visible = false
 		hud.Visible = true
 		if not current then TweenService:Create(blur, TweenInfo.new(0.25), { Size = 0 }):Play() end
@@ -1685,6 +1761,8 @@ do
 		doneBtn.Visible = false
 		pop.Scale = 0.85
 		TweenService:Create(pop, TweenInfo.new(0.3, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+		Sfx.duck(true)
+		Sfx.play("spin")
 
 		local rTiles, rT = fill(rTrack, Config.RARITIES, RARITY_PAL, res.r, 5)
 		local mTiles, mT = fill(mTrack, Config.MUTATIONS, MUT_PAL, res.m, 7)
@@ -1707,11 +1785,15 @@ do
 			end
 			if not still(2.45) then return end
 			land(rTiles[rT], odds(res.rChance))
+			Sfx.play("land", { pitch = 0.9 + res.r * 0.05 })
+			if res.r >= 4 then Sfx.play("rare") end -- Epic and up
 			ring.Color = rinfo.color
 			raysF.Visible = res.r >= 4 -- Epic and up get light rays
 			for _, bar in raysF:GetChildren() do bar.BackgroundColor3 = rinfo.color end
 			if not still(0.55) then return end
 			land(mTiles[mT], odds(res.mChance))
+			Sfx.play("land")
+			if res.m > 1 then Sfx.play("mutation") end
 			if not still(0.4) then return end
 			for i, b in bars do
 				local sc = res.scores[i] or 0
@@ -1723,11 +1805,13 @@ do
 			if not still(0.3) then return end
 			for i = 1, res.stars do
 				starLook(stars[i], true)
+				Sfx.play("star", { pitch = 1 + (i - 1) * 0.07 }) -- each star a step higher
 				stars[i].UIScale.Scale = 1.5
 				TweenService:Create(stars[i].UIScale, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Scale = 1 }):Play()
 				if not still(0.18) then return end
 			end
 			verdict.Text = Config.VERDICTS[res.stars] or ""
+			Sfx.play("reveal", { pitch = 0.9 + res.stars * 0.04 })
 			if not still(0.25) then return end
 			local t0 = os.clock()
 			repeat -- count the multiplier up from x1
@@ -1764,10 +1848,10 @@ local function cutoutFx(part)
 	local mut = Config.MUTATIONS[m]
 	local look = mut and MUT_LOOK[mut.name]
 	if not look then return end
-	if look.rain then part.Size *= Vector3.new(1.25, 1.25, 1) end -- room on the cutout for the digit aura; the drawing shrinks back to its own size
+	if look.ring then part.Size *= Vector3.new(1.25, 1.25, 1) end -- room on the cutout for the ring; the drawing shrinks back to its own size
 	for _, sg in part:GetChildren() do
 		if sg:IsA("SurfaceGui") then
-			if look.rain then sg.Drawing.Size = S(0.8, 0.8) end
+			if look.ring then sg.Drawing.Size = S(0.8, 0.8) end
 			mutationFx(sg.Drawing, m)
 		end
 	end
@@ -2009,10 +2093,99 @@ do
 		for inst, g in goals do TweenService:Create(inst, TweenInfo.new(3, Enum.EasingStyle.Sine), g):Play() end
 	end
 
+	-- rain, snow and meteors: emitters on invisible client-only boxes that follow the camera, so it falls wherever you are
+	local cam = workspace.CurrentCamera
+	local function box(name, size)
+		return new("Part", { Name = name, Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false, Transparency = 1, Size = size }, workspace)
+	end
+	local skyBox, groundBox, meteorBox = box("ZooWeatherSky", Vector3.new(80, 1, 80)), box("ZooWeatherGround", Vector3.new(80, 1, 80)), box("ZooWeatherMeteors", Vector3.new(300, 1, 300))
+	local function emitter(parent, props)
+		props.Enabled, props.Shape = false, Enum.ParticleEmitterShape.Box
+		props.EmissionDirection = props.EmissionDirection or Enum.NormalId.Bottom
+		return new("ParticleEmitter", props, parent)
+	end
+	local SPARK, kp = "rbxasset://textures/particles/fire_sparks_main.dds", NumberSequenceKeypoint.new
+	local falls = {
+		rain = {
+			-- soft blobs stretched tall, always facing you upright: VelocityParallel streaks turn edge-on and vanish from a normal camera
+			emitter(skyBox, { Texture = "rbxasset://textures/particles/smoke_main.dds", Rate = reduced and 200 or 500, Lifetime = NumberRange.new(1.1), Speed = NumberRange.new(80, 95),
+				Orientation = Enum.ParticleOrientation.FacingCameraWorldUp, Size = NumberSequence.new(0.3), Squash = NumberSequence.new(4),
+				Color = ColorSequence.new(rgb(205, 222, 255)), Transparency = NumberSequence.new(0.15), LightEmission = 0.2, LightInfluence = 0.3, Acceleration = Vector3.new(4, 0, 2) }),
+			-- splash rings on the ground round you
+			emitter(groundBox, { Texture = "rbxasset://textures/particles/explosion01_shockwave_main.dds", Rate = reduced and 40 or 120, Lifetime = NumberRange.new(0.35),
+				Speed = NumberRange.new(0.1), EmissionDirection = Enum.NormalId.Top, Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
+				Size = NumberSequence.new(0.1, 1.1), Transparency = NumberSequence.new(0.4, 1), Color = ColorSequence.new(rgb(220, 235, 255)), LightInfluence = 0.6 }),
+		},
+		snow = {
+			emitter(skyBox, { Texture = "rbxasset://textures/particles/sparkles_main.dds", Rate = reduced and 120 or 280, Lifetime = NumberRange.new(10), Speed = NumberRange.new(5, 9),
+				SpreadAngle = Vector2.new(25, 25), RotSpeed = NumberRange.new(-60, 60), Rotation = NumberRange.new(0, 360), Size = NumberSequence.new(0.45),
+				Transparency = NumberSequence.new({ kp(0, 1), kp(0.1, 0.1), kp(1, 0.1) }), LightInfluence = 0.3, Acceleration = Vector3.new(1.5, 0, 0.8) }),
+		},
+	}
+	local meteorFx = emitter(meteorBox, { Texture = SPARK, Rate = 2, Lifetime = NumberRange.new(1, 1.4), Speed = NumberRange.new(110, 140),
+		Orientation = Enum.ParticleOrientation.FacingCamera, Rotation = NumberRange.new(50, 60), Size = NumberSequence.new(3, 0.6), Squash = NumberSequence.new(4), LightEmission = 1, LightInfluence = 0,
+		Color = ColorSequence.new(rgb(255, 235, 255), rgb(160, 110, 255)), Transparency = NumberSequence.new({ kp(0, 0), kp(0.7, 0.2), kp(1, 1) }) })
+
+	-- thunderstorm: the sky flashes; a far strike rumbles a moment later, a near one draws a bolt and cracks where it lands
+	local flash = new("ColorCorrectionEffect", { Name = "ZooFlash" }, Lighting)
+	local function strike()
+		flash.Brightness = reduced and 0.12 or 0.45
+		TweenService:Create(flash, TweenInfo.new(0.5, Enum.EasingStyle.Quad), { Brightness = 0 }):Play()
+		local near = math.random() < 0.35
+		local c, ang = cam.CFrame.Position, math.random() * math.pi * 2
+		local dist = near and math.random(60, 120) or math.random(200, 400)
+		local spot = Vector3.new(c.X + math.cos(ang) * dist, 0, c.Z + math.sin(ang) * dist)
+		if not near then
+			task.delay(0.3 + math.random() * 1.2, Sfx.play, "thunder")
+			return
+		end
+		local hit = workspace:Raycast(spot + Vector3.new(0, 300, 0), Vector3.new(0, -600, 0))
+		local ground = hit and hit.Position or spot
+		local bolt = new("Model", { Name = "ZooBolt" }, workspace)
+		local p0 = ground + Vector3.new(0, 160, 0)
+		for k = 1, 8 do -- a jagged neon line down to the ground
+			local p1 = if k == 8 then ground else ground + Vector3.new(math.random(-8, 8), 160 * (1 - k / 8), math.random(-8, 8))
+			new("Part", { Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false, Material = Enum.Material.Neon, Color = rgb(235, 240, 255),
+				Size = Vector3.new(0.6, 0.6, (p1 - p0).Magnitude), CFrame = CFrame.lookAt((p0 + p1) / 2, p1) }, bolt)
+			p0 = p1
+		end
+		local at = new("Attachment", { WorldPosition = ground }, workspace.Terrain)
+		local light = new("PointLight", { Brightness = 8, Range = 60, Color = rgb(220, 230, 255) }, at)
+		Sfx.play("strike", { at = at })
+		task.delay(0.18, function() bolt:Destroy() light:Destroy() end)
+		task.delay(8, function() at:Destroy() end)
+	end
+
 	local weatherNow
+	RunService.Heartbeat:Connect(function()
+		if not weatherNow or not (weatherNow.fall or weatherNow.meteors) then return end
+		local c = cam.CFrame.Position + cam.CFrame.LookVector * 30 -- a little ahead of the camera: where you're looking
+		skyBox.CFrame = CFrame.new(c.X, c.Y + 45, c.Z)
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		groundBox.CFrame = CFrame.new(c.X, root and root.Position.Y - 3 or c.Y - 10, c.Z)
+		local ahead = cam.CFrame.LookVector * Vector3.new(1, 0, 1) -- meteors fall in the sky in front of you, where you can see them
+		local m = c + (if ahead.Magnitude > 0.01 then ahead.Unit * 130 else Vector3.zero)
+		meteorBox.CFrame = CFrame.new(m.X, c.Y + 110, m.Z) * CFrame.Angles(math.rad(35), math.rad(30), 0) -- tilted: they streak in sideways
+	end)
+	task.spawn(function()
+		while true do
+			task.wait(5 + math.random() * 9)
+			if weatherNow and weatherNow.storm then strike() end
+		end
+	end)
+	task.spawn(function()
+		while true do
+			task.wait(1.5 + math.random() * 3)
+			if weatherNow and weatherNow.meteors then Sfx.play("meteor") end
+		end
+	end)
+
 	local function refresh()
 		local w = Config.weather(Zoo:GetAttribute("Weather"))
 		applyLook(w and w.look)
+		for kind, list in falls do for _, e in list do e.Enabled = w ~= nil and w.fall == kind end end
+		meteorFx.Enabled = w ~= nil and w.meteors == true
+		Sfx.ambience(w and w.ambience)
 		banner.Visible = w ~= nil
 		rainGui.Enabled = w ~= nil and w.rain ~= nil and not reduced
 		if w then
@@ -2024,7 +2197,7 @@ do
 			if w.rain then for _, d in drops do resetDrop(d, w, true) end end
 			toast(w.name:upper() .. " WEATHER! " .. w.mutation .. " mutations are way more likely!", w.color)
 		elseif weatherNow then
-			toast("The weather cleared up.")
+			toast("The weather cleared up.", nil, "toast")
 		end
 		weatherNow = w
 	end
@@ -2897,9 +3070,10 @@ do
 		local racing = mine(s.racers)
 		hudR.Visible = racing and s.phase == "racing"
 		racingNow = racing
+		Sfx.raceMusic(racing)
 		for _, f in hideWhileOpen do f.Visible = current == nil and not racing end
 		if racing and current == "Race" then close("Race") end
-		if racing and s.phase == "racing" and before == "countdown" and shown ~= 0 then pop("GO!", C.cash) end
+		if racing and s.phase == "racing" and before == "countdown" and shown ~= 0 then pop("GO!", C.cash) Sfx.play("go") end
 		if not racing then shown, lastLap = nil, nil end
 		if s.soloAt and s.soloAt ~= lastSolo and mine(s.queue) then
 			lastSolo = s.soloAt
@@ -2918,9 +3092,11 @@ do
 			if left >= 1 and left ~= shown then
 				shown = left
 				pop(tostring(left), C.yellow, 0.9)
+				Sfx.play("beep")
 			elseif left < 1 and shown ~= 0 then -- GO! right on time, not when the server's next broadcast lands
 				shown = 0
 				pop("GO!", C.cash)
+				Sfx.play("go")
 			end
 		end
 	end)
@@ -2928,11 +3104,15 @@ do
 		if i.place then
 			placeL.Text = ordinal(i.place) .. " / " .. i.count
 			lapL.Text = "LAP " .. i.lap .. "/" .. i.laps
-			if lastLap and i.lap > lastLap then pop(i.lap == i.laps and "FINAL LAP!" or "LAP " .. i.lap, C.yellow, 1.2) end
+			if lastLap and i.lap > lastLap then
+				pop(i.lap == i.laps and "FINAL LAP!" or "LAP " .. i.lap, C.yellow, 1.2)
+				Sfx.play("upgrade")
+			end
 			lastLap = i.lap
 		end
 		if i.boost then
 			pop("BOOST!", hex("3DF5FF"), 0.6)
+			Sfx.play("boost")
 			kick = 1
 		end
 		if i.respawn and myDrive then myDrive.snap(i.respawn) end
@@ -2940,7 +3120,8 @@ do
 		if i.finished then
 			hudR.Visible = false
 			pop(ordinal(i.finished) .. " PLACE!", i.finished == 1 and C.yellow or WHITE, 2)
-			if i.time then toast(string.format("Your time: %d:%05.2f", i.time // 60, i.time % 60)) end
+			Sfx.play(i.finished <= 3 and "cheer" or "reveal")
+			if i.time then toast(string.format("Your time: %d:%05.2f", i.time // 60, i.time % 60), nil, "toast") end
 		end
 	end)
 
@@ -2974,7 +3155,14 @@ do
 		local slice = 360 / n
 		local target = -(i - 1) * slice - 360 * 5 + (math.random() - 0.5) * slice * 0.6
 		local tw = TweenService:Create(dial, TweenInfo.new(4.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Rotation = target })
+		local lastK = 0
+		local ticker = RunService.Heartbeat:Connect(function() -- a tick each time a slice passes the pointer
+			local k = math.floor(dial.Rotation / slice)
+			if k ~= lastK then lastK = k Sfx.play("tick") end
+		end)
 		tw.Completed:Once(function()
+			ticker:Disconnect()
+			Sfx.play("reward")
 			result.Text, collect.Visible = text, true
 			pop("YOU WON!", C.yellow, 1.2)
 		end)
@@ -3002,7 +3190,7 @@ do
 			local d = Render.draw(bb, design, true, 2)
 			local mut = Config.MUTATIONS[part:GetAttribute("Mutation") or 1]
 			local look = mut and MUT_LOOK[mut.name]
-			if look and look.rain then d.Size = S(0.8, 0.8) end
+			if look and look.ring then d.Size = S(0.8, 0.8) end
 			mutationFx(d, part:GetAttribute("Mutation"))
 		end
 		local weld = part:WaitForChild("MountWeld", 5)

@@ -35,17 +35,68 @@ Config.MUTATIONS = {
 	{ name = "Gold", chance = 0.06, mult = 3, color = rgb(255, 214, 40) },
 	{ name = "Diamond", chance = 0.03, mult = 6, color = rgb(110, 230, 255) },
 	{ name = "Rainbow", chance = 0.01, mult = 15, color = rgb(255, 90, 220) },
-	{ name = "Matrix", chance = 0, mult = 8, color = rgb(60, 255, 110) }, -- Matrix weather only
+	{ name = "Matrix", chance = 0, mult = 2.5, color = rgb(60, 255, 110), weather = true },
+	-- weather = only its weather rolls it, and it wears off after Config.MUTATION_TIME (the animal goes back to Normal)
+	{ name = "Soaked", chance = 0, mult = 1.5, color = rgb(90, 170, 255), weather = true },
+	{ name = "Frozen", chance = 0, mult = 1.75, color = rgb(170, 235, 255), weather = true },
+	{ name = "Misty", chance = 0, mult = 2, color = rgb(205, 200, 225), weather = true },
+	{ name = "Electric", chance = 0, mult = 2.5, color = rgb(255, 230, 40), weather = true },
+	{ name = "Cosmic", chance = 0, mult = 3, color = rgb(150, 100, 255), weather = true },
 }
+Config.MUTATION_TIME = { 1800, 10800 } -- a weather mutation lasts a random 30 min - 3 h of real time (offline too)
+Config.MATRIX_OLD_MULT = 8 -- Matrix paid x8 before 2026-11-23; ZooServer rescales those animals once
 
 -- Weather: random server-wide events (ZooWeather.server.luau), one at a time with calm gaps between. While one is on,
 -- its mutation rolls at `chance` instead of its normal chance. Seconds are picked at random inside each range.
 -- look = Lighting properties every client tweens to: the key is "Lighting" or the name of a Lighting child.
--- rain = characters that fall in columns over the screen (leave it out for no rain). icon = a Config.ICONS key.
-Config.WEATHER_GAP = { 360, 720 }
+-- rain = characters that fall in columns over the screen (Matrix). icon = a Config.ICONS key. ZooClient draws the rest:
+-- fall = "rain"/"snow" particles round the camera, storm = lightning, meteors = shooting stars; ambience = a Sfx loop.
+Config.WEATHER_GAP = { 240, 480 }
 Config.WEATHERS = {
-	{ name = "Matrix", mutation = "Matrix", chance = 0.1, weight = 1, duration = { 120, 180 }, icon = "cloud", color = rgb(60, 255, 110),
-		rain = "0123456789ABCDEFXZ$#%&*+=<>",
+	{ name = "Rain", mutation = "Soaked", chance = 0.25, weight = 4, duration = { 150, 210 }, icon = "cloud", color = rgb(90, 170, 255),
+		fall = "rain", ambience = "rainLoop",
+		look = {
+			Lighting = { ClockTime = 14, Brightness = 1.6, Ambient = rgb(110, 120, 140), OutdoorAmbient = rgb(120, 130, 150) },
+			Atmosphere = { Density = 0.42, Color = rgb(170, 180, 200), Decay = rgb(110, 120, 140), Haze = 2, Glare = 0 },
+			CartoonGrade = { TintColor = rgb(220, 232, 255), Saturation = -0.15, Contrast = 0 },
+		},
+	},
+	{ name = "Snow", mutation = "Frozen", chance = 0.2, weight = 3, duration = { 150, 210 }, icon = "cloud", color = rgb(170, 235, 255),
+		fall = "snow", ambience = "windLoop",
+		look = {
+			Lighting = { ClockTime = 13, Brightness = 2.4, Ambient = rgb(150, 165, 190), OutdoorAmbient = rgb(175, 190, 215) },
+			Atmosphere = { Density = 0.42, Color = rgb(225, 235, 250), Decay = rgb(170, 190, 220), Haze = 2, Glare = 0 },
+			CartoonGrade = { TintColor = rgb(225, 240, 255), Saturation = -0.1, Contrast = 0 },
+		},
+	},
+	{ name = "Fog", mutation = "Misty", chance = 0.15, weight = 3, duration = { 120, 180 }, icon = "cloud", color = rgb(205, 200, 225),
+		ambience = "fogLoop",
+		look = {
+			-- thick but not blind: the near park stays readable, the far edge melts away
+			Lighting = { ClockTime = 9, Brightness = 1.6, Ambient = rgb(140, 140, 155), OutdoorAmbient = rgb(160, 160, 175) },
+			Atmosphere = { Density = 0.62, Offset = 0.05, Color = rgb(215, 215, 228), Decay = rgb(180, 180, 200), Haze = 3, Glare = 0 },
+			CartoonGrade = { TintColor = rgb(238, 236, 248), Saturation = -0.2, Contrast = -0.05 },
+		},
+	},
+	{ name = "Thunderstorm", mutation = "Electric", chance = 0.1, weight = 2, duration = { 120, 180 }, icon = "bolt", color = rgb(255, 230, 40),
+		fall = "rain", storm = true, ambience = "stormLoop",
+		look = {
+			Lighting = { ClockTime = 17, Brightness = 1.1, Ambient = rgb(80, 85, 110), OutdoorAmbient = rgb(90, 95, 125) },
+			Atmosphere = { Density = 0.45, Color = rgb(120, 125, 150), Decay = rgb(70, 75, 100), Haze = 2.2, Glare = 0 },
+			CartoonGrade = { TintColor = rgb(205, 212, 240), Saturation = -0.2, Contrast = 0.08 },
+		},
+	},
+	{ name = "Meteor Shower", mutation = "Cosmic", chance = 0.08, weight = 1, duration = { 120, 180 }, icon = "rocket", color = rgb(150, 100, 255),
+		meteors = true, ambience = "nightLoop",
+		look = {
+			-- night, but a bright starry one: players still need to see the park
+			Lighting = { ClockTime = 0.5, Brightness = 2, Ambient = rgb(90, 80, 140), OutdoorAmbient = rgb(110, 100, 170) },
+			Atmosphere = { Density = 0.2, Color = rgb(120, 100, 190), Decay = rgb(60, 40, 120), Haze = 0.4, Glare = 0 },
+			CartoonGrade = { TintColor = rgb(225, 215, 255), Saturation = 0.05, Contrast = 0.05 },
+		},
+	},
+	{ name = "Matrix", mutation = "Matrix", chance = 0.1, weight = 2, duration = { 120, 180 }, icon = "cloud", color = rgb(60, 255, 110),
+		rain = "0123456789ABCDEFXZ$#%&*+=<>", ambience = "matrixLoop",
 		look = {
 			-- a light green wash, not a dark night: players still need to see the park
 			Lighting = { ClockTime = 17.5, Brightness = 2.2, Ambient = rgb(90, 140, 100), OutdoorAmbient = rgb(120, 175, 130) },

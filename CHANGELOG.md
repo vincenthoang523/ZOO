@@ -2,6 +2,36 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-23 (sound and weather)
+
+- **Sound** (new `ReplicatedStorage.Zoo.Sfx`, all licensed Roblox library audio; the list is in `docs/SOUNDS.md`):
+  - **Where sounds play:**
+    - Every button click, and windows opening and closing.
+    - Toasts (a soft pop, or a gentle "no" for errors).
+    - Buying, selling, upgrading and rewards.
+    - Brush strokes, which play lower with a bigger brush, and finishing a drawing.
+    - The roll: a whoosh, ticks when each strip lands, a shimmer for Epic and up or a mutation, stars rising in pitch, and a sting on the verdict.
+    - The race: countdown beeps, a horn, a boost whoosh, lap dings, applause for the top 3, and the prize wheel ticking.
+  - **Variation:** every play nudges pitch +-4% and volume +-10%.
+  - **Not annoying:** each sound has a cooldown and a voice cap.
+  - **Music:** soft park music (5 APM tracks shuffled) and a race track. It ducks under the roll reveal.
+  - **Toggles:** MUSIC and SOUND toggles sit over the cash and are saved with the player (`sound` in the save, `Remotes.Settings`).
+- **Weather:**
+  - **Five new weathers, each with its own mutation:**
+    - Rain: Soaked x1.5, with blue drips.
+    - Snow: Frozen x1.75, with an icy rim and sparkles.
+    - Fog: Misty x2, see-through.
+    - Thunderstorm: Electric x2.5, with crackling sparks.
+    - Meteor Shower: Cosmic x3, with orbiting stars.
+  - **3D effects:** rain and snow are particles round the camera, with splash rings on the ground. Storms flash and rumble, and near strikes draw a bolt. Meteor Shower is a starry night with shooting stars.
+  - **Ambience:** each weather has its own sound loop.
+  - **Timing:** weather comes round every 4-8 minutes (was 6-12).
+- **Weather mutations wear off:**
+  - They last a random 30 min to 3 h of real time (offline too), then the animal goes back to Normal and its income drops back (`a.me` in the save).
+  - My Zoo shows the time left.
+  - The Odds window lists only the live weather's mutation.
+- **Matrix nerfed:** x8 -> x2.5. Owned Matrix animals were rescaled once, the first time they loaded, and got a timer.
+
 ## 2026-11-23
 
 - **Smoother windows:** My Zoo, the trader and the race picker kept every animal card between opens and only rebuild them when your animals change. Tapping a card just moves the gold outline (was a full rebuild of every card: about 200 ms with 30 animals, now under 17 ms). The race picker had been rebuilding on every race update. Windows also fill before the pop animation starts, so a slow first fill no longer eats the start of the animation.
