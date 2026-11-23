@@ -125,7 +125,7 @@ local FX = {
 	coin = "rbxassetid://99051818597913", gem = "rbxassetid://743807896", glint = "rbxassetid://112882057182762", star = "rbxassetid://5639840603",
 	zero = "rbxassetid://7603617427", one = "rbxassetid://7603634841", drop = "rbxassetid://377760449", snow = "rbxassetid://4485122848",
 	cloud = "rbxassetid://13678395731", bolt = "rbxassetid://13701253806", rain = "rbxassetid://18975587175", ring = "rbxassetid://103532369150032",
-	meteor = "rbxassetid://910582653",
+	glow = "rbxassetid://90676085484425", dust = "rbxassetid://116843503185853", -- meteors
 }
 -- by mutation name; Normal has none. glow = the world light. fx = the particle images a mutated animal gives off in the world;
 -- fxTint = the image is white and takes the glow colour; fxFall = they drip down instead of floating up; fxSize = studs
@@ -2105,15 +2105,18 @@ do
 				end
 			end
 		end
-		for inst, g in goals do TweenService:Create(inst, TweenInfo.new(3, Enum.EasingStyle.Sine), g):Play() end
+		for inst, g in goals do
+			for k, v in g do if typeof(v) == "boolean" then inst[k], g[k] = v, nil end end -- on/off can't tween: flip it now
+			TweenService:Create(inst, TweenInfo.new(3, Enum.EasingStyle.Sine), g):Play()
+		end
 	end
 
-	-- rain, snow and meteors: emitters on invisible client-only boxes that follow the camera, so it falls wherever you are
+	-- rain and snow: emitters on invisible client-only boxes that follow the camera, so it falls wherever you are
 	local cam = workspace.CurrentCamera
 	local function box(name, size)
 		return new("Part", { Name = name, Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false, Transparency = 1, Size = size }, workspace)
 	end
-	local skyBox, groundBox, meteorBox = box("ZooWeatherSky", Vector3.new(80, 1, 80)), box("ZooWeatherGround", Vector3.new(80, 1, 80)), box("ZooWeatherMeteors", Vector3.new(300, 1, 300))
+	local skyBox, groundBox = box("ZooWeatherSky", Vector3.new(80, 1, 80)), box("ZooWeatherGround", Vector3.new(80, 1, 80))
 	local function emitter(parent, props)
 		props.Enabled, props.Shape = false, Enum.ParticleEmitterShape.Box
 		props.EmissionDirection = props.EmissionDirection or Enum.NormalId.Bottom
@@ -2137,10 +2140,58 @@ do
 				Transparency = NumberSequence.new({ kp(0, 1), kp(0.1, 0.1), kp(1, 0.1) }), LightInfluence = 0.3, Acceleration = Vector3.new(1.5, 0, 0.8) }),
 		},
 	}
-	-- a cartoon shooting star (its tail trails up and to the right of the star)
-	local meteorFx = emitter(meteorBox, { Texture = FX.meteor, Rate = 2, Lifetime = NumberRange.new(1, 1.4), Speed = NumberRange.new(110, 140),
-		Orientation = Enum.ParticleOrientation.FacingCamera, Size = NumberSequence.new(6, 4), LightEmission = 0.5, LightInfluence = 0,
-		Color = ColorSequence.new(WHITE, rgb(225, 210, 255)), Transparency = NumberSequence.new({ kp(0, 0), kp(0.7, 0.1), kp(1, 1) }) })
+	-- meteor shower: purple fireballs. Each is a client-only glowing head with a halo, three wispy trails, sparks and a dust
+	-- cloud it leaves hanging in the sky, streaking down across the sky in front of you and burning out.
+	local METEOR = { core = rgb(248, 230, 255), glow = rgb(185, 110, 255), deep = rgb(90, 30, 170) }
+	local meteorsLive = 0
+	local function meteor()
+		if meteorsLive >= 4 then return end
+		meteorsLive += 1
+		local ahead = cam.CFrame.LookVector * Vector3.new(1, 0, 1)
+		ahead = if ahead.Magnitude > 0.01 then ahead.Unit else Vector3.new(0, 0, -1)
+		local side = ahead:Cross(Vector3.yAxis)
+		local start = cam.CFrame.Position + ahead * math.random(180, 320) + side * math.random(-200, 200) + Vector3.new(0, math.random(140, 220), 0)
+		local dir = (side * (math.random() < 0.5 and -0.8 or 0.8) + Vector3.new(0, -0.55, 0) + ahead * (math.random() - 0.5) * 0.4).Unit
+		local travel, secs = math.random(220, 340), 2.2 + math.random() * 1.2
+		local head = new("Part", { Name = "ZooMeteor", Shape = Enum.PartType.Ball, Size = Vector3.one * 3, Material = Enum.Material.Neon, Color = METEOR.core,
+			Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false, CFrame = CFrame.lookAt(start, start + dir) }, workspace)
+		local light = new("PointLight", { Color = METEOR.glow, Range = 60, Brightness = 4 }, head)
+		local function halo(size, col, trans, rate) -- soft glow sprites stuck to the head
+			new("ParticleEmitter", { Texture = FX.glow, LockedToPart = true, Rate = rate, Lifetime = NumberRange.new(0.15, 0.25), Speed = NumberRange.new(0),
+				Size = NumberSequence.new(size), Color = ColorSequence.new(col), Transparency = NumberSequence.new(trans), LightEmission = 1, LightInfluence = 0, ZOffset = 1 }, head)
+		end
+		halo(7, METEOR.core, 0.15, 40) -- the white-hot core
+		halo(20, METEOR.glow, 0.45, 30) -- the purple bloom round it
+		-- wispy trails: three plain glowing ribbons of different width and length ({ offset, width, seconds }); the head rolls
+		-- as it flies, which twists them into wisps
+		for i, t in { { 0, 6, 1.6 }, { 1.5, 3, 2.4 }, { -1.5, 2.5, 2 } } do
+			local a0 = new("Attachment", { Position = Vector3.new(t[1], t[2] / 2, 0) }, head)
+			local a1 = new("Attachment", { Position = Vector3.new(t[1], -t[2] / 2, 0) }, head)
+			new("Trail", { Attachment0 = a0, Attachment1 = a1, FaceCamera = true, LightEmission = 1, LightInfluence = 0,
+				Lifetime = t[3], MinLength = 0.2, WidthScale = NumberSequence.new(1, 0.15), Color = ColorSequence.new(METEOR.core, METEOR.deep),
+				Transparency = NumberSequence.new({ kp(0, i == 1 and 0.1 or 0.3), kp(1, 1) }) }, head)
+		end
+		-- dust: grainy purple clouds swelling and fading where it passed, and glowing sparks flung off the back
+		new("ParticleEmitter", { Texture = FX.dust, Rate = 45, Lifetime = NumberRange.new(2, 3.5), Speed = NumberRange.new(0.5, 3), SpreadAngle = Vector2.new(180, 180),
+			Size = NumberSequence.new({ kp(0, 2.5), kp(1, 11) }), Rotation = NumberRange.new(0, 360), RotSpeed = NumberRange.new(-15, 15),
+			Color = ColorSequence.new(METEOR.glow, METEOR.deep), Transparency = NumberSequence.new({ kp(0, 0.55), kp(1, 1) }), LightEmission = 0.5, LightInfluence = 0 }, head)
+		new("ParticleEmitter", { Texture = FX.glow, Rate = 35, Lifetime = NumberRange.new(0.6, 1.4), Speed = NumberRange.new(4, 14), SpreadAngle = Vector2.new(50, 50),
+			EmissionDirection = Enum.NormalId.Back, Drag = 2, Size = NumberSequence.new(1, 0), Color = ColorSequence.new(METEOR.core, METEOR.glow), LightEmission = 1, LightInfluence = 0 }, head)
+		Sfx.play("meteor")
+		local t0, conn = os.clock(), nil
+		conn = RunService.Heartbeat:Connect(function()
+			local a = (os.clock() - t0) / secs
+			if a < 1 then
+				local p = start + dir * travel * a
+				head.CFrame = CFrame.lookAt(p, p + dir) * CFrame.Angles(0, 0, math.sin(a * secs * 9) * 0.6)
+				return
+			end
+			conn:Disconnect() -- burnt out: the head and halo go, the trails and dust finish fading
+			for _, e in head:GetChildren() do if e:IsA("ParticleEmitter") then e.Enabled = false end end
+			head.Transparency, light.Enabled = 1, false
+			task.delay(4, function() head:Destroy() meteorsLive -= 1 end)
+		end)
+	end
 
 	-- thunderstorm: the sky flashes; a far strike rumbles a moment later, a near one draws a bolt and cracks where it lands
 	local flash = new("ColorCorrectionEffect", { Name = "ZooFlash" }, Lighting)
@@ -2174,14 +2225,11 @@ do
 
 	local weatherNow
 	RunService.Heartbeat:Connect(function()
-		if not weatherNow or not (weatherNow.fall or weatherNow.meteors) then return end
+		if not weatherNow or not weatherNow.fall then return end
 		local c = cam.CFrame.Position + cam.CFrame.LookVector * 30 -- a little ahead of the camera: where you're looking
 		skyBox.CFrame = CFrame.new(c.X, c.Y + 45, c.Z)
 		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 		groundBox.CFrame = CFrame.new(c.X, root and root.Position.Y - 3 or c.Y - 10, c.Z)
-		local ahead = cam.CFrame.LookVector * Vector3.new(1, 0, 1) -- meteors fall in the sky in front of you, where you can see them
-		local m = c + (if ahead.Magnitude > 0.01 then ahead.Unit * 130 else Vector3.zero)
-		meteorBox.CFrame = CFrame.new(m.X, c.Y + 110, m.Z) * CFrame.Angles(math.rad(35), math.rad(30), 0) -- tilted: they streak in sideways
 	end)
 	task.spawn(function()
 		while true do
@@ -2191,8 +2239,8 @@ do
 	end)
 	task.spawn(function()
 		while true do
-			task.wait(1.5 + math.random() * 3)
-			if weatherNow and weatherNow.meteors then Sfx.play("meteor") end
+			task.wait(1.2 + math.random() * 2.5)
+			if weatherNow and weatherNow.meteors then meteor() end
 		end
 	end)
 
@@ -2200,7 +2248,6 @@ do
 		local w = Config.weather(Zoo:GetAttribute("Weather"))
 		applyLook(w and w.look)
 		for kind, list in falls do for _, e in list do e.Enabled = w ~= nil and w.fall == kind end end
-		meteorFx.Enabled = w ~= nil and w.meteors == true
 		Sfx.ambience(w and w.ambience)
 		banner.Visible = w ~= nil
 		rainGui.Enabled = w ~= nil and w.rain ~= nil and not reduced

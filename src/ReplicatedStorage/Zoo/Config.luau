@@ -84,6 +84,9 @@ Config.WEATHERS = {
 			Lighting = { ClockTime = 17, Brightness = 1.1, Ambient = rgb(80, 85, 110), OutdoorAmbient = rgb(90, 95, 125) },
 			Atmosphere = { Density = 0.45, Color = rgb(120, 125, 150), Decay = rgb(70, 75, 100), Haze = 2.2, Glare = 0 },
 			CartoonGrade = { TintColor = rgb(205, 212, 240), Saturation = -0.2, Contrast = 0.08 },
+			-- overcast: no sun (or moon and stars) showing through the storm, and no sun rays
+			Sky = { CelestialBodiesShown = false },
+			SunRays = { Intensity = 0 },
 		},
 	},
 	{ name = "Meteor Shower", mutation = "Cosmic", chance = 0.08, weight = 1, duration = { 120, 180 }, icon = "rocket", color = rgb(150, 100, 255),

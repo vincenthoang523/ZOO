@@ -2,6 +2,17 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-23 (storm sky and real meteors)
+
+- **Thunderstorm hides the sun:** the sky's sun, moon and stars are off and the sun rays are off for the storm, and they come back after it. `applyLook` flips on/off settings directly, since they can't tween.
+- **Meteor Shower:** real purple fireballs replace the falling shooting-star pictures. Each is client-only and has:
+  - a glowing neon head with a white-hot core and a purple bloom, and a purple light;
+  - three glowing ribbons that twist into wisps as the head rolls;
+  - glowing sparks flung off the back;
+  - a grainy purple dust cloud that swells and fades where it passed.
+
+  The meteors streak down across the sky in front of you, up to 4 at once, and burn out after 2-3 seconds.
+
 ## 2026-11-23 (themed particles)
 
 - **No more default Roblox particles.** Every particle now uses a themed Creator Store image (ids in `docs/ASSETS.md`).

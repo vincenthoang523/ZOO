@@ -60,7 +60,8 @@ Free decals from the Creator Store, not ours. Particles use the decal's image id
 | Snow, Frozen | 4485122848 | 4485122860 |
 | Rain streak | 18975587175 | 18975587206 |
 | Rain splash ring | 103532369150032 | 100938956257211 |
-| Meteor (shooting star) | 910582653 | 910582657 |
+| Meteor glow (head halo, core, sparks) | 90676085484425 | 113705035723267 |
+| Meteor dust cloud | 116843503185853 | 96685992574014 |
 | Gold (coin) | 99051818597913 | 89043974367538 |
 | Diamond (gem) | 743807896 | 743807897 |
 | Rainbow (4-point glint) | 112882057182762 | 98450296135718 |
