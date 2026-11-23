@@ -77,9 +77,10 @@ local function sync(player, full)
 	end
 end
 
-local function spawnAnimal(folder, design, rarity, mutation, income)
+local function spawnAnimal(folder, design, rarity, mutation, income, id)
 	local p = Instance.new("Part")
 	p.Name = "Animal"
+	if id then p:SetAttribute("Id", id) end
 	p.Size, p.Transparency, p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = Vector3.one, 1, true, false, false, false
 	local pen = folder.Parent.Pen
 	p.CFrame = pen.CFrame * CFrame.new(rng:NextNumber(-0.35, 0.35) * pen.Size.X, 3, rng:NextNumber(-0.35, 0.35) * pen.Size.Z)
@@ -94,10 +95,15 @@ end
 local function refreshPlot(player)
 	local s = sessions[player]
 	if not s or not s.plot then return end
-	s.plot.Animals:ClearAllChildren()
-	for _, a in s.data.animals do
-		if a.eq then spawnAnimal(s.plot.Animals, a.d, a.r, a.m, Config.income(a)) end
+	-- only the animals that came or went are touched: every client redraws an animal part from scratch (~11 ms each),
+	-- so respawning the whole pen on every sale, upgrade or purchase froze everyone in the server
+	local want = {}
+	for _, a in s.data.animals do if a.eq then want[a.id] = a end end
+	for _, p in s.plot.Animals:GetChildren() do
+		local id = p:GetAttribute("Id")
+		if id and want[id] then want[id] = nil else p:Destroy() end
 	end
+	for id, a in want do spawnAnimal(s.plot.Animals, a.d, a.r, a.m, Config.income(a), id) end
 	s.plot.Arch.OwnerGui.Rate.Text = "$" .. Config.format(rate(s)) .. "/s"
 	-- the plot's upgrade sign and easel read these (ZooClient builds the sign faces)
 	local cap = capacity(s)

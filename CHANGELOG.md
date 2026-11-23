@@ -4,6 +4,11 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-22
 
+- **Performance** (from a performance check: one world animal drawing took ~11 ms to build on every client):
+  - **Pens update in place:** the server only adds or removes the animals that changed (each animal part carries an `Id` attribute), instead of respawning the whole pen on every equip, sale, upgrade or pass purchase. A full pen used to freeze every client in the server for about 140 ms each time.
+  - **Lighter world drawings:** animals in the world are drawn at 80 x 56 (step 3) instead of 120 x 84, and their drawings hide past 150 studs (was 300). About 28% fewer GUI instances per animal in the test.
+  - **Windows redraw only when needed:** My Zoo, the trader and the race windows rebuild only when your animals or zoo size change, not on every State update (daily claims, race prizes, offline pay). With 50 animals that was about a 200 ms freeze each time.
+
 - **Game page:** the experience is now called "Draw a Zoo" (was "ZDOTTY2TACT"), with a real description (was "GG"), and VR is off. Set through Open Cloud on the start place and the universe. Still to do in the Creator Hub by hand: the age rating (the maturity questionnaire decides it; free drawing needs the 16+ answer).
 - **Playtest report fixes** (from a 30-minute test at place v117):
   - **Better animals no longer vanish into storage:** with a full zoo, a new animal that out-earns your weakest one takes its place, and the roll screen says where it went (swapped in, or sent to storage). SELL ALL UNEQUIPPED never sells an animal better than your weakest equipped one.

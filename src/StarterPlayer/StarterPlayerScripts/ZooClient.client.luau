@@ -457,9 +457,18 @@ local state = { luckLevel = 0, capLevel = 0, capacity = Config.CAP_START, animal
 local stateAt = os.clock()
 local showOffline, pendingOffline, introDone
 local clearEditor -- set by FINISH DRAWING, run when the roll arrives: the canvas is only wiped once the server accepted it
+-- windows that draw every animal (each card is a full drawing, ~3 ms) only rebuild when the animals or the zoo size
+-- really changed, not on every State (a daily claim, a race prize, an offline payout...)
+local ANIMAL_WINDOWS = { Inventory = true, Sell = true, Race = true, RaceAsk = true }
+local animalKey
 Remotes.State.OnClientEvent:Connect(function(s)
 	state, stateAt = s, os.clock()
-	if current and refreshers[current] then refreshers[current]() end
+	local parts = { tostring(s.capacity) }
+	for _, a in s.animals or {} do table.insert(parts, a.id .. (a.eq and "+" or "-")) end
+	local key = table.concat(parts, ",")
+	local animalsChanged = key ~= animalKey
+	animalKey = key
+	if current and refreshers[current] and (animalsChanged or not ANIMAL_WINDOWS[current]) then refreshers[current]() end
 	if s.offline then
 		pendingOffline = s.offline
 		if introDone then showOffline(s.offline) end
@@ -1757,9 +1766,11 @@ local function addAnimal(part)
 	-- and from the side it is a sliver. The size change is local; the server's part stays a 1-stud marker.
 	part.Size = Vector3.new(8 * k, 5.6 * k, 0.05)
 	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+		-- 80 x 56 at world size: about 40% fewer frames than 120 x 84 and half the build time, and it reads the same
+		-- from a few studs away. Past 150 studs the drawing isn't drawn at all (a full server has ~90 of these).
 		local sg = new("SurfaceGui", { Face = face, SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud, PixelsPerStud = 40, LightInfluence = 0.25,
-			MaxDistance = 300, Adornee = part }, part)
-		Render.draw(sg, design, true, 2) -- 120 x 84 is plenty at world size
+			MaxDistance = 150, Adornee = part }, part)
+		Render.draw(sg, design, true, 3)
 	end
 	-- the showcase animals stand close together behind Safari Sam: their names only show up close, so they don't pile up
 	local tagGui = new("BillboardGui", { Size = U(9, 0, 2.2, 0), StudsOffset = Vector3.new(0, 2.8 * k + 1.4, 0), LightInfluence = 0,
