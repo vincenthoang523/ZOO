@@ -2,6 +2,22 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-23 (themed particles)
+
+- **No more default Roblox particles.** Every particle now uses a themed Creator Store image (ids in `docs/ASSETS.md`).
+  - **Weather:** snowflakes for snow, tapered streaks for rain, rings for rain splashes, and a cartoon shooting star for meteors.
+  - **Mutated animals in the world:** each gives off its own particles:
+    - Gold: coins
+    - Diamond: gems
+    - Rainbow: rainbow glints
+    - Matrix: green 0s and 1s
+    - Soaked: water drops that fall
+    - Frozen: snowflakes
+    - Misty: cloud puffs
+    - Electric: bolts
+    - Cosmic: stars
+  - **Checked:** in a playtest, no emitter is left on the default texture.
+
 ## 2026-11-23 (sound and weather)
 
 - **Sound** (new `ReplicatedStorage.Zoo.Sfx`, all licensed Roblox library audio; the list is in `docs/SOUNDS.md`):

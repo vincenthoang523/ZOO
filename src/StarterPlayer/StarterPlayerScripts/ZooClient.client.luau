@@ -120,17 +120,26 @@ end)
 local RAINBOW = MUT_PAL[4]
 local rainbowRims = {} -- [drawing] = { { rim frame, hue offset } }
 local matrixBits = {} -- [drawing] = { bits = ring labels, chars = what they flip between }, one flips per tick
-local MUT_LOOK = { -- by mutation name; Normal has none. glow = the world light and particles
-	Gold = { tint = hex("FFE39A"), rim = hex("FF9F0A"), shine = true, sparkle = hex("FFF6C2"), glow = hex("FFD84A") },
-	Diamond = { tint = hex("D4F4FF"), rim = hex("5CD8FF"), shine = true, sparkle = WHITE, glow = hex("9EEBFF") },
-	Rainbow = { spin = true, sparkle = WHITE, glow = hex("FF7AE6") },
-	Matrix = { tint = hex("7DFF9E"), rim = hex("2BE36A"), ring = { "0", "1" }, glow = hex("3CFF6E") },
+-- particle images: free Creator Store decals (decal ids in docs/ASSETS.md). Never Roblox's default sparkle: it reads as unfinished.
+local FX = {
+	coin = "rbxassetid://99051818597913", gem = "rbxassetid://743807896", glint = "rbxassetid://112882057182762", star = "rbxassetid://5639840603",
+	zero = "rbxassetid://7603617427", one = "rbxassetid://7603634841", drop = "rbxassetid://377760449", snow = "rbxassetid://4485122848",
+	cloud = "rbxassetid://13678395731", bolt = "rbxassetid://13701253806", rain = "rbxassetid://18975587175", ring = "rbxassetid://103532369150032",
+	meteor = "rbxassetid://910582653",
+}
+-- by mutation name; Normal has none. glow = the world light. fx = the particle images a mutated animal gives off in the world;
+-- fxTint = the image is white and takes the glow colour; fxFall = they drip down instead of floating up; fxSize = studs
+local MUT_LOOK = {
+	Gold = { tint = hex("FFE39A"), rim = hex("FF9F0A"), shine = true, sparkle = hex("FFF6C2"), glow = hex("FFD84A"), fx = { FX.coin } },
+	Diamond = { tint = hex("D4F4FF"), rim = hex("5CD8FF"), shine = true, sparkle = WHITE, glow = hex("9EEBFF"), fx = { FX.gem } },
+	Rainbow = { spin = true, sparkle = WHITE, glow = hex("FF7AE6"), fx = { FX.glint }, fxTint = true },
+	Matrix = { tint = hex("7DFF9E"), rim = hex("2BE36A"), ring = { "0", "1" }, glow = hex("3CFF6E"), fx = { FX.zero, FX.one }, fxSize = 1.4 }, -- the digits sit small in their images
 	-- weather mutations. ring = small characters floating round it; drips = drops sliding off; ghost = see-through pixels
-	Soaked = { tint = hex("C4E2FF"), rim = hex("2E8BFF"), drips = hex("8CC8FF"), glow = hex("6FB6FF") },
-	Frozen = { tint = hex("E4F8FF"), rim = hex("8FE3FF"), sparkle = WHITE, glow = hex("BFF3FF") },
-	Misty = { tint = hex("ECE8F6"), rim = hex("B9B3CC"), ghost = 0.35, glow = hex("D8D2EE") },
-	Electric = { tint = hex("FFF6C0"), rim = hex("FFD000"), sparkle = hex("FFF27A"), flicker = true, glow = hex("FFE640") },
-	Cosmic = { tint = hex("CDB8FF"), rim = hex("7A3CFF"), ring = { "★", "✦", "·" }, glow = hex("A77BFF") },
+	Soaked = { tint = hex("C4E2FF"), rim = hex("2E8BFF"), drips = hex("8CC8FF"), glow = hex("6FB6FF"), fx = { FX.drop }, fxFall = true },
+	Frozen = { tint = hex("E4F8FF"), rim = hex("8FE3FF"), sparkle = WHITE, glow = hex("BFF3FF"), fx = { FX.snow }, fxTint = true },
+	Misty = { tint = hex("ECE8F6"), rim = hex("B9B3CC"), ghost = 0.35, glow = hex("D8D2EE"), fx = { FX.cloud }, fxSize = 1.2 },
+	Electric = { tint = hex("FFF6C0"), rim = hex("FFD000"), sparkle = hex("FFF27A"), flicker = true, glow = hex("FFE640"), fx = { FX.bolt }, fxTint = true },
+	Cosmic = { tint = hex("CDB8FF"), rim = hex("7A3CFF"), ring = { "★", "✦", "·" }, glow = hex("A77BFF"), fx = { FX.star }, fxTint = true },
 }
 local function mutationFx(drawing, m)
 	local mut = Config.MUTATIONS[m or 1]
@@ -1856,9 +1865,15 @@ local function cutoutFx(part)
 		end
 	end
 	new("PointLight", { Color = look.glow, Range = 8, Brightness = 1 }, part)
-	new("ParticleEmitter", { Color = look.spin and RAINBOW or ColorSequence.new(look.glow), LightEmission = 1, Rate = 6, Lifetime = NumberRange.new(1, 1.6),
-		Speed = NumberRange.new(1.5, 3), EmissionDirection = Enum.NormalId.Top, SpreadAngle = Vector2.new(25, 25), Size = NumberSequence.new(0.3, 0),
-		Transparency = NumberSequence.new(0.2, 1) }, part)
+	local kp, size = NumberSequenceKeypoint.new, look.fxSize or 0.6
+	for _, tex in look.fx do -- coins, gems, drops, flakes... popping in, drifting off and fading
+		new("ParticleEmitter", { Texture = tex, Color = if not look.fxTint then ColorSequence.new(WHITE) elseif look.spin then RAINBOW else ColorSequence.new(look.glow),
+			LightEmission = look.fxTint and 0.6 or 0, LightInfluence = look.fxTint and 0 or 0.4, Rate = 5 / #look.fx, Lifetime = NumberRange.new(1.2, 1.8),
+			Speed = look.fxFall and NumberRange.new(0.5, 1) or NumberRange.new(1.5, 3), Acceleration = Vector3.new(0, look.fxFall and -7 or 0, 0),
+			EmissionDirection = Enum.NormalId.Top, SpreadAngle = Vector2.new(25, 25),
+			Rotation = look.fxFall and NumberRange.new(0) or NumberRange.new(-25, 25), RotSpeed = look.fxFall and NumberRange.new(0) or NumberRange.new(-45, 45),
+			Size = NumberSequence.new({ kp(0, size * 0.3), kp(0.2, size), kp(1, size * 0.7) }), Transparency = NumberSequence.new({ kp(0, 0.1), kp(0.7, 0.2), kp(1, 1) }) }, part)
+	end
 end
 
 local function addAnimal(part)
@@ -2104,27 +2119,28 @@ do
 		props.EmissionDirection = props.EmissionDirection or Enum.NormalId.Bottom
 		return new("ParticleEmitter", props, parent)
 	end
-	local SPARK, kp = "rbxasset://textures/particles/fire_sparks_main.dds", NumberSequenceKeypoint.new
+	local kp = NumberSequenceKeypoint.new
 	local falls = {
 		rain = {
-			-- soft blobs stretched tall, always facing you upright: VelocityParallel streaks turn edge-on and vanish from a normal camera
-			emitter(skyBox, { Texture = "rbxasset://textures/particles/smoke_main.dds", Rate = reduced and 200 or 500, Lifetime = NumberRange.new(1.1), Speed = NumberRange.new(80, 95),
-				Orientation = Enum.ParticleOrientation.FacingCameraWorldUp, Size = NumberSequence.new(0.3), Squash = NumberSequence.new(4),
+			-- a tapered streak image, always facing you upright: VelocityParallel streaks turn edge-on and vanish from a normal camera
+			emitter(skyBox, { Texture = FX.rain, Rate = reduced and 200 or 500, Lifetime = NumberRange.new(1.1), Speed = NumberRange.new(80, 95),
+				Orientation = Enum.ParticleOrientation.FacingCameraWorldUp, Size = NumberSequence.new(1.4),
 				Color = ColorSequence.new(rgb(205, 222, 255)), Transparency = NumberSequence.new(0.15), LightEmission = 0.2, LightInfluence = 0.3, Acceleration = Vector3.new(4, 0, 2) }),
 			-- splash rings on the ground round you
-			emitter(groundBox, { Texture = "rbxasset://textures/particles/explosion01_shockwave_main.dds", Rate = reduced and 40 or 120, Lifetime = NumberRange.new(0.35),
+			emitter(groundBox, { Texture = FX.ring, Rate = reduced and 40 or 120, Lifetime = NumberRange.new(0.35),
 				Speed = NumberRange.new(0.1), EmissionDirection = Enum.NormalId.Top, Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
 				Size = NumberSequence.new(0.1, 1.1), Transparency = NumberSequence.new(0.4, 1), Color = ColorSequence.new(rgb(220, 235, 255)), LightInfluence = 0.6 }),
 		},
 		snow = {
-			emitter(skyBox, { Texture = "rbxasset://textures/particles/sparkles_main.dds", Rate = reduced and 120 or 280, Lifetime = NumberRange.new(10), Speed = NumberRange.new(5, 9),
-				SpreadAngle = Vector2.new(25, 25), RotSpeed = NumberRange.new(-60, 60), Rotation = NumberRange.new(0, 360), Size = NumberSequence.new(0.45),
+			emitter(skyBox, { Texture = FX.snow, Rate = reduced and 120 or 280, Lifetime = NumberRange.new(10), Speed = NumberRange.new(5, 9),
+				SpreadAngle = Vector2.new(25, 25), RotSpeed = NumberRange.new(-60, 60), Rotation = NumberRange.new(0, 360), Size = NumberSequence.new(0.4),
 				Transparency = NumberSequence.new({ kp(0, 1), kp(0.1, 0.1), kp(1, 0.1) }), LightInfluence = 0.3, Acceleration = Vector3.new(1.5, 0, 0.8) }),
 		},
 	}
-	local meteorFx = emitter(meteorBox, { Texture = SPARK, Rate = 2, Lifetime = NumberRange.new(1, 1.4), Speed = NumberRange.new(110, 140),
-		Orientation = Enum.ParticleOrientation.FacingCamera, Rotation = NumberRange.new(50, 60), Size = NumberSequence.new(3, 0.6), Squash = NumberSequence.new(4), LightEmission = 1, LightInfluence = 0,
-		Color = ColorSequence.new(rgb(255, 235, 255), rgb(160, 110, 255)), Transparency = NumberSequence.new({ kp(0, 0), kp(0.7, 0.2), kp(1, 1) }) })
+	-- a cartoon shooting star (its tail trails up and to the right of the star)
+	local meteorFx = emitter(meteorBox, { Texture = FX.meteor, Rate = 2, Lifetime = NumberRange.new(1, 1.4), Speed = NumberRange.new(110, 140),
+		Orientation = Enum.ParticleOrientation.FacingCamera, Size = NumberSequence.new(6, 4), LightEmission = 0.5, LightInfluence = 0,
+		Color = ColorSequence.new(WHITE, rgb(225, 210, 255)), Transparency = NumberSequence.new({ kp(0, 0), kp(0.7, 0.1), kp(1, 1) }) })
 
 	-- thunderstorm: the sky flashes; a far strike rumbles a moment later, a near one draws a bolt and cracks where it lands
 	local flash = new("ColorCorrectionEffect", { Name = "ZooFlash" }, Lighting)

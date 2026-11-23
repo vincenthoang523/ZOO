@@ -51,6 +51,25 @@ The icon ids are kept in `Config.ICONS` in `src/ReplicatedStorage/Zoo/Config.lua
 
 To change an icon everywhere, swap its id in `Config.ICONS`.
 
+## Particle images (Creator Store decals)
+
+Free decals from the Creator Store, not ours. Particles use the decal's image id, which differs from its decal id. In `ZooClient`, the `FX` table holds the image ids. The decal ids below are for finding each one again on the store.
+
+| Use | Image id | Decal id |
+|---|---|---|
+| Snow, Frozen | 4485122848 | 4485122860 |
+| Rain streak | 18975587175 | 18975587206 |
+| Rain splash ring | 103532369150032 | 100938956257211 |
+| Meteor (shooting star) | 910582653 | 910582657 |
+| Gold (coin) | 99051818597913 | 89043974367538 |
+| Diamond (gem) | 743807896 | 743807897 |
+| Rainbow (4-point glint) | 112882057182762 | 98450296135718 |
+| Matrix (0 / 1) | 7603617427 / 7603634841 | 7603617460 / 7603634848 |
+| Soaked (water drop) | 377760449 | 377760451 |
+| Misty (cloud puff) | 13678395731 | 13678395771 |
+| Electric (bolt) | 13701253806 | 13701253844 |
+| Cosmic (star) | 5639840603 | 5639840621 |
+
 ## Not set yet
 
 `Config.PASSES` and `Config.PRODUCTS` are still `0`, so the shop shows "SOON". `Config.GROUP_ID` is also still `0`, so the Free Reward doesn't ask players to join the group.
