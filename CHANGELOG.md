@@ -2,6 +2,14 @@
 
 Newest first. "Place vN" is the Roblox place version the change was saved in, where known.
 
+## 2026-11-23
+
+- **Smoother windows:** My Zoo, the trader and the race picker kept every animal card between opens and only rebuild them when your animals change. Tapping a card just moves the gold outline (was a full rebuild of every card: about 200 ms with 30 animals, now under 17 ms). The race picker had been rebuilding on every race update. Windows also fill before the pop animation starts, so a slow first fill no longer eats the start of the animation.
+- **Matrix look:** the falling digit columns, which were clipped to a box that showed as a square behind the animal, are replaced by 18 small 1s and 0s floating in a loose ring round it. They bob, fade in and out, and flip between 0 and 1.
+- **Rebalanced upgrades:** new costs fitted with `tools/balance_sim.py` (it now takes a schedule instead of one curve). An active player with no passes gets about 6 Enclosure Size and 5 Luck upgrades in the first 30 minutes. After that each upgrade takes about 1.5x as long as the one before, and the zoo is fully maxed after about 24 hours (about 11 hours with every pass). Luck costs: $2.7K to $110B (was $810K to $24B). Size costs: $3K to $56B (was $39K to $20B).
+- **Cheaper passes** (set through Open Cloud), so a player with 500 Robux can buy all three: VIP 79 (was 99), 2x Luck 149 (was 250), 2x Money 199 (unchanged). Setting a price re-sends the pass icon (the same picture), so the passes have new icon asset ids.
+- Also synced from Studio: `scaled()` fits a window as soon as it's built (for the Admin Panel), and a new admin id in `Config.ADMINS`.
+
 ## 2026-11-22
 
 - **Performance** (from a performance check: one world animal drawing took ~11 ms to build on every client):

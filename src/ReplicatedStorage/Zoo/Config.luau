@@ -114,7 +114,7 @@ Config.CAP_START = 2
 Config.CAP_MAX = 12
 Config.MAX_INVENTORY = 50
 -- UserIds allowed to use admin chat commands such as /reset (the owner of the group that owns the game is always allowed)
-Config.ADMINS = { 213438244, 135018525 } -- 135018525 = exodtust (rank 254 in the group, so not the owner)
+Config.ADMINS = { 213438244, 135018525, 588886129 } -- 135018525 = exodtust (rank 254 in the group, so not the owner)
 Config.CREATE_COOLDOWN = 5
 Config.DAILY_COOLDOWN = 20 * 3600
 Config.DAILY_RESET = 48 * 3600
@@ -332,11 +332,12 @@ function Config.templateGrid(t: any, colored: boolean?): { number }
 	return table.clone(cells)
 end
 
--- Upgrade prices, one per level (index = level + 1). Fitted by tools/balance_sim.py so an active player with no
--- game passes is fully maxed (luck 10/10, capacity 12/12) after about 24 hours of play, with upgrades spaced from
--- minutes apart at the start to about two hours apart at the end. Re-run the sim after changing any income number.
-Config.LUCK_COSTS = { 810e3, 17e6, 75e6, 270e6, 940e6, 1.9e9, 3.9e9, 7.8e9, 13e9, 24e9 }
-Config.CAP_COSTS = { 39e3, 5.4e6, 38e6, 160e6, 540e6, 1.1e9, 2.9e9, 5.9e9, 11e9, 20e9 }
+-- Upgrade prices, one per level (index = level + 1). Fitted by tools/balance_sim.py: an active player with no passes
+-- buys about 6 size and 5 luck upgrades in the first 30 minutes (to keep new players hooked), then every gap is about
+-- 1.5x longer than the last, so the final upgrades take hours and the zoo is fully maxed after about 24 hours of play.
+-- Re-run the sim after changing any income number.
+Config.LUCK_COSTS = { 2.7e3, 17e3, 160e3, 1.5e6, 14e6, 83e6, 730e6, 4.1e9, 24e9, 110e9 }
+Config.CAP_COSTS = { 3e3, 7.4e3, 72e3, 440e3, 3.9e6, 27e6, 230e6, 1.8e9, 10e9, 56e9 }
 
 function Config.luckCost(level: number): number
 	return Config.LUCK_COSTS[level + 1]

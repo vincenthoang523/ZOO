@@ -116,6 +116,7 @@ end)
 -- colour from Lua, a few times a second, one write per rim rectangle.
 local RAINBOW = MUT_PAL[4]
 local rainbowRims = {} -- [drawing] = { { rim frame, hue offset } }
+local matrixBits = {} -- [drawing] = { digit labels }, one flips 0/1 per tick
 local MUT_LOOK = { -- by mutation name; Normal has none. glow = the world light and particles
 	Gold = { tint = hex("FFE39A"), rim = hex("FF9F0A"), shine = true, sparkle = hex("FFF6C2"), glow = hex("FFD84A") },
 	Diamond = { tint = hex("D4F4FF"), rim = hex("5CD8FF"), shine = true, sparkle = WHITE, glow = hex("9EEBFF") },
@@ -153,19 +154,19 @@ local function mutationFx(drawing, m)
 			loop(sp, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, -1, true, 0.6 + math.random() * 1.8), { Size = S(0.11, 0.11) })
 		end
 	end
-	if look.rain then -- falling 1s and 0s behind the animal, spilling a little past its edges
-		local aura = new("Frame", { Name = "Aura", BackgroundTransparency = 1, Position = S(-0.12, -0.12), Size = S(1.24, 1.24), ZIndex = 0, ClipsDescendants = true }, drawing)
-		local n = 14
-		for i = 1, n do
-			local bits = table.create(14)
-			for j = 1, 14 do bits[j] = math.random(0, 1) end
-			local edge = math.abs((i - 0.5) / n - 0.5) * 2 -- 0 in the middle, 1 at the sides: the aura fades out sideways
-			local col = table.concat(bits, "\n")
-			-- two copies of the column, 2x tall, slid down by one copy and looped: seamless
-			local l = new("TextLabel", { Name = "Bits", BackgroundTransparency = 1, Font = Enum.Font.Code, TextScaled = true, Text = col .. "\n" .. col,
-				TextColor3 = hex("3CFF6E"), TextTransparency = 0.1 + edge * 0.6 + math.random() * 0.15, Position = U((i - 1) / n, 0, -1, 0), Size = S(1 / n, 2), ZIndex = 0 }, aura)
-			loop(l, TweenInfo.new(1.8 + math.random() * 1.6, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), { Position = U((i - 1) / n, 0, 0, 0) })
+	if look.rain then -- small 1s and 0s hovering in a loose ring round the animal, bobbing, blinking and flipping
+		local bits = {}
+		for i = 1, 18 do
+			local ang = (i - 1) / 18 * math.pi * 2 + math.random() * 0.3
+			local r = 0.5 + math.random() * 0.05 -- just outside the drawing's box: the corners are empty, so the ring hugs the animal
+			local x, y = 0.5 + math.cos(ang) * r, 0.5 + math.sin(ang) * r * 0.92
+			local l = new("TextLabel", { Name = "Bit", BackgroundTransparency = 1, Font = Enum.Font.Code, TextScaled = true, Text = tostring(math.random(0, 1)),
+				TextColor3 = look.glow, TextTransparency = if reduced then 0.3 else 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = S(x, y), Size = S(0.06, 0.085), ZIndex = 0 }, drawing)
+			loop(l, TweenInfo.new(1.2 + math.random() * 1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true, math.random() * 1.5), { Position = S(x, y - 0.035) })
+			loop(l, TweenInfo.new(0.8 + math.random(), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true, math.random() * 2), { TextTransparency = 0.15 })
+			table.insert(bits, l)
 		end
+		if not reduced then matrixBits[drawing] = bits end
 	end
 	if #tweens > 0 then drawing.Destroying:Once(function() for _, tw in tweens do tw:Cancel() end end) end
 	return drawing
@@ -179,6 +180,11 @@ RunService.Heartbeat:Connect(function(dt)
 	for d, rims in rainbowRims do
 		if not d.Parent then rainbowRims[d] = nil continue end
 		for _, r in rims do r[1].BackgroundColor3 = Color3.fromHSV((t + r[2]) % 1, 0.75, 1) end
+	end
+	for d, bits in matrixBits do
+		if not d.Parent then matrixBits[d] = nil continue end
+		local l = bits[math.random(#bits)]
+		l.Text = if l.Text == "0" then "1" else "0"
 	end
 end)
 
@@ -353,17 +359,21 @@ pcall(game:GetService("StarterGui").SetCoreGuiEnabled, game:GetService("StarterG
 -- touchMin: HUD pieces (side menus, cash, race chips) never shrink below this on a touch screen, so thumbs can hit them;
 -- windows don't get one, since they must fit on the screen.
 local scales = {}
+local function fit(s)
+	local vp = gui.AbsoluteSize -- the area under the top bar, not the whole camera, so tall windows never run off the bottom
+	local k = math.clamp(math.min(vp.X / 1280, vp.Y / 760), 0.35, 1.6) -- 760, not 720: room for the window titles that sit above their frames
+	local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	s.Scale = math.max(k, touch and s:GetAttribute("TouchMin") or 0)
+end
 local function scaled(o, touchMin)
 	local s = new("UIScale", { Name = "Fit" }, o)
 	if touchMin then s:SetAttribute("TouchMin", touchMin) end
 	table.insert(scales, s)
+	fit(s) -- a window built on demand (the Admin panel) must fit right away, not only after the next viewport resize
 	return o
 end
 local function rescale()
-	local vp = gui.AbsoluteSize -- the area under the top bar, not the whole camera, so tall windows never run off the bottom
-	local k = math.clamp(math.min(vp.X / 1280, vp.Y / 760), 0.35, 1.6) -- 760, not 720: room for the window titles that sit above their frames
-	local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-	for _, s in scales do s.Scale = math.max(k, touch and s:GetAttribute("TouchMin") or 0) end
+	for _, s in scales do fit(s) end
 end
 
 local toasts = scaled(new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = U(0.5, 0, 0, 4), Size = O(900, 200), BackgroundTransparency = 1, ZIndex = 40 }, gui))
@@ -386,10 +396,11 @@ local oddsReturn -- the window Odds was opened from: closing Odds goes back to i
 local function setOpen(name, on)
 	local w = windows[name]
 	if on then
+		-- fill it before the pop starts: a slow refresh after Play ate the start of the tween, so the window jumped
+		if refreshers[name] then refreshers[name]() end
 		w.root.Visible = true
 		w.pop.Scale = 0.8
 		TweenService:Create(w.pop, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-		if refreshers[name] then refreshers[name]() end
 	else
 		local tw = TweenService:Create(w.pop, TweenInfo.new(0.13, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0.8 })
 		tw.Completed:Once(function() if current ~= name then w.root.Visible = false end end) -- reopening during the close wins
@@ -897,9 +908,16 @@ do
 		releaseBtn:SetAttribute("Sure", nil)
 		setLabel(releaseBtn, "SELL $" .. Config.format(Config.sellPrice(a)))
 	end
+	-- every card is a full drawing (~3 ms), so the cards are only rebuilt when the animals changed (animalKey);
+	-- opening the window again or tapping a card just moves the gold outline
+	local cache = {}
 	refreshers.Inventory = function()
-		for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
-		for _, ch in slots:GetChildren() do ch:Destroy() end
+		local rebuild = cache.key ~= animalKey or not cache.marks
+		if rebuild then
+			cache.key, cache.marks = animalKey, {}
+			for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
+			for _, ch in slots:GetChildren() do ch:Destroy() end
+		end
 		local active, rate = 0, 0
 		local eq = {}
 		for _, a in state.animals do
@@ -917,7 +935,7 @@ do
 			selected = best and best.id
 		end
 		-- one slot per possible enclosure spot: animals, open spots, then spots that need the Enclosure Size upgrade
-		for i = 1, Config.CAP_MAX do
+		for i = 1, rebuild and Config.CAP_MAX or 0 do
 			local a = eq[i]
 			local unlocked = i <= state.capacity
 			local f = round(new("Frame", { Position = O((i - 1) * 71 + 2, 2), Size = O(64, 64) }, slots), 10)
@@ -936,7 +954,7 @@ do
 				sticker(f, "lock", 40, S(0.5, 0.5))
 			end
 		end
-		for i, a in state.animals do
+		for i, a in rebuild and state.animals or {} do
 			local r = Config.RARITIES[a.r]
 			local b = cellButton(list, nil, RARITY_PAL[a.r], function()
 				selected = a.id
@@ -958,10 +976,10 @@ do
 				ink(e, 3)
 				label(e, "E", 20, { Size = S(1, 1) })
 			end
-			if a.id == selected then
-				b.Outline.Color = C.yellow -- gold: white would vanish against the sheet
-				b.Outline.Thickness = 6
-			end
+			cache.marks[a.id] = { b.Outline, b.Outline.Color, b.Outline.Thickness }
+		end
+		for id, m in cache.marks do -- gold: white would vanish against the sheet
+			m[1].Color, m[1].Thickness = if id == selected then C.yellow else m[2], if id == selected then 6 else m[3]
 		end
 		empty.Visible = #state.animals == 0
 		info.Text = string.format("Enclosure <font color=\"#FFE600\">%d/%d</font>   ·   Earning <font color=\"#6BFF3A\">+$%s/s</font>", active, state.capacity, Config.format(rate))
@@ -1498,8 +1516,11 @@ do
 	new("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 14), PaddingBottom = UDim.new(0, 12) }, list)
 	local empty = label(body, "No animals to sell yet!", 30, { Position = O(0, 180), Size = O(720, 40) })
 	local sellAll = button(body, "SELL ALL UNEQUIPPED", P.gold, O(460, 64), O(360, 456), function() Remotes.SellAll:FireServer() end, { icon = "cashbundle", iconSize = 44, text = 26 })
+	local builtKey -- the rows are full drawings: rebuilt only when the animals changed
 	refreshers.Sell = function()
-		for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
+		local rebuild = builtKey == nil or builtKey ~= animalKey
+		builtKey = animalKey or false
+		if rebuild then for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end end
 		-- same rule as the server's SellAll: an unequipped animal better than your weakest equipped one is kept
 		local worst
 		for _, a in state.animals do if a.eq and (not worst or Config.income(a) < worst) then worst = Config.income(a) end end
@@ -1507,6 +1528,7 @@ do
 		for i, a in state.animals do
 			local price = Config.sellPrice(a)
 			if not a.eq and not (worst and Config.income(a) > worst) then spare += price end
+			if not rebuild then continue end
 			local holder = new("Frame", { BackgroundTransparency = 1, Size = O(700, 98), LayoutOrder = (a.eq and 1000 or 0) + i }, list)
 			local _, face = card(holder, RARITY_PAL[a.r], O(696, 90), O(0, 0), 14)
 			mutationFx(Render.draw(display(face, O(110, 70), O(10, 7)), a.d, true, 3), a.m)
@@ -2750,10 +2772,15 @@ do
 		end
 		return selected and find(selected)
 	end
+	local cache = {} -- cards rebuilt only when the animals changed: this runs on every race update
 	refreshers.Race = function()
-		for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
+		local rebuild = cache.key ~= animalKey or not cache.marks
+		if rebuild then
+			cache.key, cache.marks = animalKey, {}
+			for _, ch in list:GetChildren() do if ch:IsA("Frame") then ch:Destroy() end end
+		end
 		ensureSelected()
-		for i, a in state.animals do
+		for i, a in rebuild and state.animals or {} do
 			local b = cellButton(list, nil, RARITY_PAL[a.r], function()
 				selected = a.id
 				refreshers.Race()
@@ -2761,15 +2788,18 @@ do
 			mutationFx(Render.draw(display(b.Face, O(120, 84), O(9, 8)), a.d, true, 3), a.m)
 			label(b.Face, a.d.n, 20, { Position = O(0, 96), Size = O(138, 24) })
 			label(b.Face, Config.RARITIES[a.r].name:upper(), 16, { Position = O(0, 120), Size = O(138, 20), TextColor3 = C.yellow })
-			if a.id == selected then
-				b.Outline.Color = C.yellow
-				b.Outline.Thickness = 6
-			end
+			cache.marks[a.id] = { b.Outline, b.Outline.Color, b.Outline.Thickness }
+		end
+		for id, m in cache.marks do
+			m[1].Color, m[1].Thickness = if id == selected then C.yellow else m[2], if id == selected then 6 else m[3]
 		end
 		empty.Visible = #state.animals == 0
 		local a = selected and find(selected)
-		thumb:ClearAllChildren()
-		if a then mutationFx(Render.draw(display(thumb, O(220, 154), O(0, 0), 12), a.d, true, 3), a.m) end
+		if rebuild or cache.thumb ~= selected then
+			cache.thumb = selected
+			thumb:ClearAllChildren()
+			if a then mutationFx(Render.draw(display(thumb, O(220, 154), O(0, 0), 12), a.d, true, 3), a.m) end
+		end
 		pName.Text = a and a.d.n or "-"
 		local inQueue, racing = mine(race.queue), mine(race.racers)
 		joinBtn.Visible = not inQueue and not racing and a ~= nil

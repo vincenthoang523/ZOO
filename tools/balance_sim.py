@@ -77,6 +77,30 @@ def time_to_max(luck_cost, cap_cost, passes=False, seed=0):
     return t
 
 
+def time_to_upgrades(luck_cost, cap_cost, seed, minutes=30):
+    """(luck, size) levels a no-pass player has bought after `minutes` of play."""
+    rng = random.Random(seed)
+    cash, luck_lv, cap_lv, t, equipped = 0.0, 0, 0, 0, []
+    while t < minutes * 60:
+        cap = CAP_START + cap_lv
+        equipped.append(draw_income(rng, 2 ** luck_lv)); equipped.sort(reverse=True)
+        while len(equipped) > cap: cash += equipped.pop() * SELL_SECONDS
+        rate = sum(equipped)
+        for _ in range(DRAW_SECONDS):
+            cash += rate; t += 1
+            while True:
+                opts = []
+                if luck_lv < MAX_LUCK: opts.append((luck_cost(luck_lv), "luck"))
+                if CAP_START + cap_lv < CAP_MAX: opts.append((cap_cost(cap_lv), "cap"))
+                if not opts: break
+                cost, kind = min(opts)
+                if cash < cost: break
+                cash -= cost
+                if kind == "luck": luck_lv += 1
+                else: cap_lv += 1
+    return luck_lv, cap_lv
+
+
 def report(name, luck_cost, cap_cost, runs=40):
     for passes in (False, True):
         hrs = [time_to_max(luck_cost, cap_cost, passes, seed) / 3600 for seed in range(runs)]
@@ -84,14 +108,21 @@ def report(name, luck_cost, cap_cost, runs=40):
               f"   (10th-90th pct {sorted(hrs)[runs // 10]:.2f}-{sorted(hrs)[runs * 9 // 10]:.2f} h)")
 
 
-TARGET_HOURS = 24.0
 ORDER = ["cap", "luck"] * 10        # intended upgrade order: alternate, capacity first
 
 
-def fit(total_hours=24.0, power=2.0, runs=40):
-    """Cost of each upgrade so that, bought in ORDER, upgrade i lands at total_hours * (i/20)^power. The cost is the
-    mean cash a player has made since the previous upgrade, so they can afford it right on schedule."""
-    targets = [total_hours * 3600 * ((i + 1) / len(ORDER)) ** power for i in range(len(ORDER))]
+def schedule(first_min=1.0, early=11, early_min=30.0, total_hours=24.0):
+    """Minute each upgrade lands at: geometric (every gap a fixed factor longer) from first_min to early_min for the
+    first `early` upgrades (retention: 6 size + 5 luck in the first half hour), then a steeper geometric to total_hours."""
+    g1 = (early_min / first_min) ** (1 / (early - 1))
+    g2 = (total_hours * 60 / early_min) ** (1 / (len(ORDER) - early))
+    return [first_min * g1 ** i if i < early else early_min * g2 ** (i - early + 1) for i in range(len(ORDER))]
+
+
+def fit(runs=40):
+    """Cost of each upgrade so that, bought in ORDER, upgrade i lands at schedule()[i]. The cost is the median cash a
+    player has made since the previous upgrade, so they can afford it right on schedule."""
+    targets = [m * 60 for m in schedule()]
     costs = []
     for i, target in enumerate(targets):
         made = []
@@ -127,9 +158,11 @@ def nice(n):
 if __name__ == "__main__":
     assert abs(sum(chances(1)) - 1) < 1e-9 and chances(1024)[-1] == 1   # self-check: odds always sum to 1
     report("current", lambda l: 500 * 4 ** l, lambda l: 300 * 3 ** l)
-    costs = [nice(c) for c in fit(total_hours=TARGET_HOURS)]
+    costs = [nice(c) for c in fit()]
     luck = [c for c, k in zip(costs, ORDER) if k == "luck"]
     cap = [c for c, k in zip(costs, ORDER) if k == "cap"]
     print("LUCK_COSTS =", luck)
     print("CAP_COSTS  =", cap)
     report("fitted", lambda l: luck[l], lambda l: cap[l])
+    first = [time_to_upgrades(lambda l: luck[l], lambda l: cap[l], seed) for seed in range(40)]
+    print("upgrades in the first 30 min (luck, size): median", statistics.median(f[0] for f in first), statistics.median(f[1] for f in first))

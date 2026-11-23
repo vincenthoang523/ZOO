@@ -57,13 +57,13 @@ To change an icon everywhere, swap its id in `Config.ICONS`.
 
 ## Game passes and developer products (universe 10776824767)
 
-Created through Open Cloud on 2026-11-19. Icons are drawn by `blender/make_pass_icons.py` and saved in `blender/export/icons/`.
+Created through Open Cloud on 2026-11-19. Pass prices lowered on 2026-11-23 so all three cost 427 Robux together. Icons are drawn by `blender/make_pass_icons.py` and saved in `blender/export/icons/`.
 
 | Id | Kind | Name | Robux |
 |---|---|---|---|
-| 2096448686 | Game pass | VIP (+20% cash) | 199 |
-| 2094550605 | Game pass | 2x Money | 399 |
-| 2093692759 | Game pass | 2x Luck | 299 |
+| 2096448686 | Game pass | VIP (+20% cash) | 79 |
+| 2094550605 | Game pass | 2x Money | 199 |
+| 2093692759 | Game pass | 2x Luck | 149 |
 | 3733847302 | Developer product | Luck Boost (2x luck, 5 min) | 49 |
 | 3733847308 | Developer product | Starter Pack ($25K + 30 min 2x luck) | 99 |
 | 3733847314 | Developer product | Double Offline Cash | 25 |
