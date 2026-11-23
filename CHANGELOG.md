@@ -4,6 +4,7 @@ Newest first. "Place vN" is the Roblox place version the change was saved in, wh
 
 ## 2026-11-22
 
+- **Game page:** the experience is now called "Draw a Zoo" (was "ZDOTTY2TACT"), with a real description (was "GG"), and VR is off. Set through Open Cloud on the start place and the universe. Still to do in the Creator Hub by hand: the age rating (the maturity questionnaire decides it; free drawing needs the 16+ answer).
 - **Playtest report fixes** (from a 30-minute test at place v117):
   - **Better animals no longer vanish into storage:** with a full zoo, a new animal that out-earns your weakest one takes its place, and the roll screen says where it went (swapped in, or sent to storage). SELL ALL UNEQUIPPED never sells an animal better than your weakest equipped one.
   - **Judge:** a filled rectangle no longer scores 5 stars (now 3). SIZE peaks at 30-50% of the canvas and falls to 0 for a full canvas, and NEAT drops when the shape runs into all four edges. Every template keeps its stars.
